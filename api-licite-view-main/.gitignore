@@ -1,0 +1,54 @@
+# Credenciais e configuração local
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtualenv
+venv/
+.venv/
+env/
+.env/
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Mypy / Pyright
+.mypy_cache/
+.pyright/
+
+# Alembic (versões geradas localmente não precisam de url exposta)
+# alembic/versions/ — mantenha comentado se quiser versionar as migrations
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Uploads / arquivos temporários
+uploads/
+tmp/
+
+.claude/
