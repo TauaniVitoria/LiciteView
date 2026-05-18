@@ -1,0 +1,265 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.filtro-container {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px;
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.15);
+  margin: 20px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.filtro-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 30px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  transition: background 0.3s ease;
+}
+
+.filtro-header:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.icon-filtro {
+  font-size: 24px;
+  color: white;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.filtro-header h3 {
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.badge-custom {
+  margin-left: 10px;
+}
+
+.icon-chevron {
+  color: white;
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.icon-chevron.rotated {
+  transform: rotate(-180deg);
+}
+
+.filtro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  padding: 30px;
+  background: white;
+}
+
+.filtro-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filtro-grupo.full-width {
+  grid-column: 1 / -1;
+}
+
+.filtro-grupo label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-label {
+  font-size: 14px;
+  color: #667eea;
+}
+
+.input-search {
+  width: 100%;
+}
+
+.valor-range,
+.periodo-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+:host ::ng-deep .p-dropdown-custom,
+:host ::ng-deep .p-autocomplete-custom,
+:host ::ng-deep .p-multiselect-custom,
+:host ::ng-deep .p-inputnumber-custom,
+:host ::ng-deep .p-calendar-custom {
+  width: 100%;
+}
+
+:host ::ng-deep .p-dropdown-custom .p-dropdown,
+:host ::ng-deep .p-autocomplete-custom .p-autocomplete,
+:host ::ng-deep .p-multiselect-custom .p-multiselect,
+:host ::ng-deep .p-calendar-custom .p-calendar {
+  width: 100%;
+}
+
+:host ::ng-deep .p-dropdown-custom .p-dropdown-label,
+:host ::ng-deep .p-autocomplete-custom .p-autocomplete-input,
+:host ::ng-deep .p-multiselect-custom .p-multiselect-label,
+:host ::ng-deep .p-inputnumber-custom .p-inputnumber-input,
+:host ::ng-deep .p-calendar-custom .p-calendar-input {
+  padding: 12px 15px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  background: #fafbfc;
+}
+
+:host ::ng-deep .p-dropdown-custom .p-dropdown:focus,
+:host ::ng-deep .p-autocomplete-custom .p-autocomplete-input:focus,
+:host ::ng-deep .p-multiselect-custom .p-multiselect:focus,
+:host ::ng-deep .p-inputnumber-custom .p-inputnumber-input:focus,
+:host ::ng-deep .p-calendar-custom .p-calendar-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  background: white;
+}
+
+:host ::ng-deep .p-dropdown-custom .p-dropdown:hover,
+:host ::ng-deep .p-autocomplete-custom .p-autocomplete-input:hover,
+:host ::ng-deep .p-multiselect-custom .p-multiselect:hover,
+:host ::ng-deep .p-inputgroup .p-inputgroup-addon {
+  background: #fafbfc;
+  border-color: #cbd5e0;
+}
+
+:host ::ng-deep .p-inputgroup .p-inputgroup-addon {
+  border: 2px solid #e2e8f0;
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  background: #fafbfc;
+  color: #4a5568;
+}
+
+:host ::ng-deep .p-inputnumber-custom .p-inputnumber-input {
+  border-radius: 0 12px 12px 0;
+}
+
+:host ::ng-deep .p-selectbutton-custom .p-button {
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+:host ::ng-deep .p-selectbutton-custom .p-button.p-highlight {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+}
+
+.filtro-actions {
+  display: flex;
+  gap: 15px;
+  padding: 20px 30px 30px;
+  background: white;
+  border-top: 1px solid #f0f0f0;
+}
+
+.btn-limpar,
+.btn-aplicar {
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-limpar:hover,
+.btn-aplicar:hover {
+  transform: translateY(-2px);
+}
+
+.btn-aplicar {
+  flex: 1;
+  justify-content: center;
+}
+
+.btn-aplicar:hover {
+  box-shadow: 0 10px 20px -5px rgba(102, 126, 234, 0.4);
+}
+
+.btn-limpar:active,
+.btn-aplicar:active {
+  transform: translateY(0);
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .filtro-container {
+    margin: 10px;
+  }
+  
+  .filtro-grid {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    gap: 15px;
+  }
+  
+  .filtro-header {
+    padding: 15px 20px;
+  }
+  
+  .filtro-header h3 {
+    font-size: 16px;
+  }
+  
+  .filtro-actions {
+    flex-direction: column;
+    padding: 15px 20px 20px;
+  }
+  
+  .valor-range,
+  .periodo-range {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Animações */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+form {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* Placeholder styling */
+::placeholder {
+  color: #a0aec0;
+  font-size: 13px;
+}

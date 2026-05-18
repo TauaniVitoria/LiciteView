@@ -1,0 +1,196 @@
+<div class="radar-container fadein animation-duration-200 p-4 max-w-screen-xl mx-auto">
+  <div class="page-header mb-4">
+    <h1 class="page-title flex align-items-center">
+      <i class="pi pi-search text-2xl mr-2 text-primary"></i>
+      Buscar Editais e Licitações
+    </h1>
+    <p class="page-subtitle text-600">Encontre oportunidades de compras e contratações públicas.</p>
+  </div>
+
+  <!-- Filtros Top Card -->
+  <p-card styleClass="shadow-2 border-round-xl border-none mb-4">
+    <h3 class="m-0 text-lg font-semibold text-900 mb-3">Filtros</h3>
+    <form [formGroup]="filterForm" (ngSubmit)="buscar()">
+      <div class="p-fluid grid">
+        <!-- Search -->
+        <div class="col-12 mb-3">
+          <div class="p-inputgroup w-full border-round-lg shadow-1">
+            <span class="p-inputgroup-addon bg-white border-right-none text-500">
+              <i class="pi pi-search"></i>
+            </span>
+            <input pInputText type="text" formControlName="palavraChave" placeholder="Buscar licitações..."
+              class="border-left-none p-3 text-lg" />
+          </div>
+        </div>
+
+        <!-- Principais (from Image) -->
+        <div class="col-12 md:col-3">
+          <label class="block text-sm font-medium text-700 mb-1">Categoria</label>
+          <p-select [options]="tiposInstrumento" formControlName="tipoInstrumento" placeholder="Todas" [showClear]="true" styleClass="w-full"></p-select>
+        </div>
+        <div class="col-12 md:col-3">
+          <label class="block text-sm font-medium text-700 mb-1">Estado (UF)</label>
+          <p-select [options]="ufs" formControlName="uf" placeholder="Todos" [showClear]="true" styleClass="w-full"></p-select>
+        </div>
+        <div class="col-12 md:col-3">
+          <label class="block text-sm font-medium text-700 mb-1">Modalidade</label>
+          <p-select [options]="modalidades" formControlName="modalidade" placeholder="Todas" [showClear]="true" styleClass="w-full"></p-select>
+        </div>
+        <div class="col-12 md:col-3">
+          <label class="block text-sm font-medium text-700 mb-1">Valor estimado</label>
+          <div class="flex gap-2">
+            <input pInputText type="text" placeholder="Min" class="w-full" />
+            <input pInputText type="text" placeholder="Max" class="w-full" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Accordion para filtros avançados que foram solicitados -->
+      <p-accordion class="mt-3 block" [multiple]="true">
+        <p-accordion-panel value="avancados">
+          <p-accordion-header>Filtros Avançados</p-accordion-header>
+          <p-accordion-content>
+            <div class="p-fluid grid pt-3">
+              <!-- Período -->
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Data Inicial</label>
+                <p-datePicker formControlName="dataInicial" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full"></p-datePicker>
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Data Final</label>
+                <p-datePicker formControlName="dataFinal" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full"></p-datePicker>
+              </div>
+              <!-- Instituição -->
+              <div class="col-12 md:col-3 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Esfera</label>
+                <p-select [options]="esferas" formControlName="esfera" placeholder="Qualquer" [showClear]="true" styleClass="w-full"></p-select>
+              </div>
+              <div class="col-12 md:col-3 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Poder</label>
+                <p-select [options]="poderes" formControlName="poder" placeholder="Qualquer" [showClear]="true" styleClass="w-full"></p-select>
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Município</label>
+                <input pInputText type="text" formControlName="municipio" placeholder="Nome do Município" class="w-full" />
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Órgão</label>
+                <input pInputText type="text" formControlName="orgao" placeholder="Nome ou CNPJ" class="w-full" />
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Unidade</label>
+                <input pInputText type="text" formControlName="unidade" placeholder="Nome ou Código" class="w-full" />
+              </div>
+              <!-- Orçamento -->
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Fontes Orçamentárias</label>
+                <input pInputText type="text" formControlName="fonteOrcamentaria" placeholder="Ex: Própria, Convênio" class="w-full" />
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Tipos de Margens de Preferência</label>
+                <input pInputText type="text" formControlName="tipoMargemPreferencia" placeholder="Ex: Normal, Adicional" class="w-full" />
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Exigência de Conteúdo Nacional</label>
+                <p-select [options]="opcoesSimNao" formControlName="exigenciaConteudoNacional" placeholder="Qualquer" [showClear]="true" styleClass="w-full"></p-select>
+              </div>
+              <div class="col-12 md:col-6 field mb-3">
+                <label class="block text-sm font-medium text-700 mb-1">Emenda Parlamentar</label>
+                <p-select [options]="opcoesSimNao" formControlName="emendaParlamentar" placeholder="Qualquer" [showClear]="true" styleClass="w-full"></p-select>
+              </div>
+            </div>
+          </p-accordion-content>
+        </p-accordion-panel>
+      </p-accordion>
+
+      <div class="flex justify-content-end gap-2 mt-4 pt-3 border-top-1 border-200">
+        <button pButton type="button" label="Limpar" icon="pi pi-trash" class="p-button-text p-button-secondary" (click)="limparFiltros()"></button>
+        <button pButton type="submit" label="Filtrar Resultados" icon="pi pi-search" class="p-button-primary"></button>
+      </div>
+    </form>
+  </p-card>
+
+  <!-- Main Content -->
+  <div>
+    <!-- Tags de Filtros Ativos -->
+    <div class="flex flex-wrap gap-2 mb-3" *ngIf="filterForm.value.uf || filterForm.value.modalidade || filterForm.value.palavraChave">
+      <p-tag *ngIf="filterForm.value.uf" severity="info" value="UF: {{ filterForm.value.uf }}" [rounded]="true" icon="pi pi-map-marker"></p-tag>
+      <p-tag *ngIf="filterForm.value.modalidade" severity="info" value="Modalidade: {{ filterForm.value.modalidade }}" [rounded]="true" icon="pi pi-briefcase"></p-tag>
+      <p-tag *ngIf="filterForm.value.palavraChave" severity="info" value="Busca: {{ filterForm.value.palavraChave }}" [rounded]="true" icon="pi pi-search"></p-tag>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div *ngIf="loading" class="flex flex-column align-items-center justify-content-center p-5 bg-white border-round-xl shadow-2">
+      <p-progressSpinner styleClass="w-4rem h-4rem" strokeWidth="4" animationDuration=".5s"></p-progressSpinner>
+      <p class="text-600 mt-3">Buscando editais no portal...</p>
+    </div>
+
+    <!-- Error Message -->
+    <div *ngIf="error" class="flex flex-column align-items-center justify-content-center p-5 bg-white border-round-xl shadow-2 text-red-500">
+      <i class="pi pi-exclamation-triangle text-5xl mb-3"></i>
+      <p class="text-lg">{{ error }}</p>
+      <button pButton type="button" label="Tentar Novamente" class="p-button-danger p-button-outlined mt-3" (click)="buscar()"></button>
+    </div>
+
+    <!-- Results Table/Grid -->
+    <div *ngIf="!loading && !error">
+      <div class="flex justify-content-between align-items-center mb-4">
+        <span class="text-700 font-medium"><span class="font-bold text-900">{{ totalRecords }}</span> licitação(ões) encontrada(s)</span>
+      </div>
+
+      <div class="grid" *ngIf="licitacoes.length > 0">
+        <div class="col-12 md:col-6 lg:col-4 mb-3" *ngFor="let licitacao of licitacoes">
+          <p-card styleClass="shadow-1 border-round-xl h-full flex flex-column hover:shadow-3 transition-all transition-duration-200">
+            <div class="flex flex-column h-full">
+              <div class="flex justify-content-between align-items-start mb-3">
+                <h3 class="m-0 text-900 font-semibold line-height-3 text-lg" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; height: 4.5rem;">
+                  {{ licitacao.titulo }}
+                </h3>
+                <span *ngIf="licitacao.status" class="text-xs px-2 py-1 border-round font-semibold ml-2 flex-shrink-0"
+                  [ngClass]="licitacao.statusClass === 'aberta' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'">
+                  {{ licitacao.status }}
+                </span>
+              </div>
+
+              <div class="flex flex-column gap-2 text-600 mb-4 flex-grow-1">
+                <div class="flex align-items-center">
+                  <i class="pi pi-building mr-2 text-400"></i>
+                  <span class="text-sm line-height-2">{{ licitacao.orgao }}</span>
+                </div>
+                <div class="flex align-items-center">
+                  <i class="pi pi-map-marker mr-2 text-400"></i>
+                  <span class="text-sm line-height-2">{{ licitacao.uf || 'BR' }} &bull; {{ licitacao.modalidade }}</span>
+                </div>
+                <div class="flex align-items-center">
+                  <i class="pi pi-dollar mr-2 text-400"></i>
+                  <span class="text-sm font-semibold text-900">{{ licitacao.valorEstimado }}</span>
+                </div>
+                <div class="flex align-items-center">
+                  <i class="pi pi-calendar mr-2 text-400"></i>
+                  <span class="text-sm line-height-2">Abertura: {{ licitacao.data }}</span>
+                </div>
+              </div>
+
+              <div class="mt-auto pt-3 border-top-1 border-200">
+                <button pButton type="button" label="Ver Detalhes" class="w-full bg-gray-900 text-white border-gray-900 hover:bg-gray-800 transition-colors transition-duration-200"></button>
+              </div>
+            </div>
+          </p-card>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div *ngIf="licitacoes.length === 0" class="text-center p-5 text-600 border-1 border-200 border-round-xl surface-50">
+        <i class="pi pi-inbox text-4xl mb-3 text-400"></i>
+        <p class="m-0 text-lg">Nenhuma licitação encontrada com os filtros selecionados.</p>
+      </div>
+
+      <!-- Paginator -->
+      <div class="mt-4 flex justify-content-center bg-white border-round-xl shadow-1 p-2">
+        <p-paginator (onPageChange)="onPageChange($event)" [first]="(filterForm.value.pagina - 1) * 10" [rows]="10"
+          [totalRecords]="totalRecords" [showCurrentPageReport]="true"
+          currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} registros"></p-paginator>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,38 @@
+:host {
+  display: block;
+  background-color: #f8fafc;
+  min-height: calc(100vh - 70px);
+}
+
+.radar-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+::ng-deep .p-accordion-header-link {
+  background-color: transparent !important;
+  padding: 1rem 0 !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+}
+
+::ng-deep .p-accordion-content {
+  background-color: transparent !important;
+  padding: 0 0 1rem 0 !important;
+  border: none !important;
+}
+
+::ng-deep .p-accordion-tab {
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.p-fluid .p-dropdown, .p-fluid .p-datepicker {
+  width: 100%;
+}

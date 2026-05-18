@@ -1,0 +1,221 @@
+<div class="filtro-container">
+  <div class="filtro-header" (click)="togglePainel()">
+    <div class="header-left">
+      <i class="pi pi-search icon-filtro"></i>
+      <h3>Filtros de Busca</h3>
+      <p-badge 
+        *ngIf="getTotalFiltrosAtivos() > 0" 
+        [value]="getTotalFiltrosAtivos() + ' ativo(s)'" 
+        severity="danger"
+        class="badge-custom">
+      </p-badge>
+    </div>
+    <i class="pi pi-chevron-down icon-chevron" [class.rotated]="!painelAberto"></i>
+  </div>
+
+  <form [formGroup]="filtroForm" (ngSubmit)="onSubmit()" *ngIf="painelAberto">
+    <div class="filtro-grid">
+      
+      <!-- Palavra-chave -->
+      <div class="filtro-grupo full-width">
+        <label>
+          <i class="pi pi-search icon-label"></i>
+          Palavra-chave
+        </label>
+        <input 
+          type="text" 
+          formControlName="palavraChave" 
+          placeholder="Buscar por objeto, descrição, empresa..."
+          pInputText
+          class="input-search">
+      </div>
+
+      <!-- Tipos de Instrumento Convocatório -->
+      <div class="filtro-grupo">
+        <label>          
+          <i class="pi pi-file icon-label"></i>
+          Tipos de Instrumento Convocatório
+        </label>
+        <p-select
+          formControlName="tipoInstrumentoConvocatorio"
+          [options]="tiposInstrumento"
+          placeholder="Selecione o tipo"
+          optionLabel="label"
+          optionValue="value"
+          [showClear]="true"
+          styleClass="p-dropdown-custom">
+        </p-select>
+      </div>
+
+      <!-- Modalidade da Contratação-->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-tag icon-label"></i>
+          Modalidade
+        </label>
+        <p-select
+          formControlName="modalidade"
+          [options]="modalidades"
+          placeholder="Todas as modalidades"
+          [showClear]="true"
+          styleClass="p-dropdown-custom">
+        </p-select>
+      </div>
+
+      <!-- Órgãos -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-building icon-label"></i>
+          Órgãos
+        </label>
+        <p-autoComplete 
+          formControlName="orgaos"
+          [suggestions]="filtroOrgaos"
+          (completeMethod)="buscarOrgaos($event)"
+          placeholder="Digite o nome do órgão"
+          field="nome"
+          [dropdown]="true"
+          styleClass="p-autocomplete-custom">
+        </p-autoComplete>
+      </div>
+
+      <!-- UF -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-map-marker icon-label"></i>
+          UF
+        </label>
+            <p-select
+            [options]="ufs"
+            optionLabel="label"
+            optionValue="value"
+            formControlName="uf"
+            placeholder="Selecione uma UF"
+            [showClear]="true">
+            </p-select>
+      </div>
+
+      <!-- Município -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-building icon-label"></i>
+          Município
+        </label>
+        <p-select
+          formControlName="municipio"
+          [options]="municipios"
+          placeholder="Todos os municípios"
+          [showClear]="true"
+          [filter]="true"
+          [disabled]="!filtroForm.get('uf')?.value"
+          styleClass="p-dropdown-custom">
+        </p-select>
+      </div>
+
+      <!-- Esfera -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-sitemap icon-label"></i>
+          Esfera
+        </label>
+        <p-select
+          formControlName="esfera"
+          [options]="esferas"
+          placeholder="Todas as esferas"
+          optionLabel="label"
+          optionValue="value"
+          [showClear]="true"
+          styleClass="p-dropdown-custom">
+        </p-select>
+      </div>
+
+      <!-- Poderes -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-gavel icon-label"></i>
+          Poderes
+        </label>
+        <p-multiSelect 
+          formControlName="poderes"
+          [options]="poderes"
+          placeholder="Selecione os poderes"
+          optionLabel="label"
+          optionValue="value"
+          [showToggleAll]="true"
+          styleClass="p-multiselect-custom">
+        </p-multiSelect>
+      </div>      
+
+      <!-- Forças Orçamentárias -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-chart-line icon-label"></i>
+          Forças Orçamentárias
+        </label>
+        <p-multiSelect 
+          formControlName="forcasOrcamentarias"
+          [options]="forcasOrcamentarias"
+          placeholder="Selecione as forças"
+          optionLabel="label"
+          optionValue="value"
+          [showToggleAll]="true"
+          styleClass="p-multiselect-custom">
+        </p-multiSelect>
+      </div>      
+
+      <!-- Tipos de Margens de Preferência -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-percent icon-label"></i>
+          Margens de Preferência
+        </label>
+        <p-multiSelect 
+          formControlName="tiposMargensPreferencia"
+          [options]="margensPreferencia"
+          placeholder="Selecione os tipos"
+          optionLabel="label"
+          optionValue="value"
+          [showToggleAll]="true"
+          styleClass="p-multiselect-custom">
+        </p-multiSelect>
+      </div>    
+
+      <!-- Exigência de Conteúdo Nacional -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-flag icon-label"></i>
+          Conteúdo Nacional
+        </label>
+        <p-selectButton 
+          formControlName="exigenciaConteudoNacional"
+          [options]="opcoesSimNao"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="p-selectbutton-custom">
+        </p-selectButton>
+      </div>    
+
+      <!-- Emenda Parlamentar -->
+      <div class="filtro-grupo">
+        <label>
+          <i class="pi pi-money-bill icon-label"></i>
+          Emenda Parlamentar
+        </label>
+        <p-selectButton 
+          formControlName="emendaParlamentar"
+          [options]="opcoesSimNao"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="p-selectbutton-custom">
+        </p-selectButton>
+      </div>
+
+  
+    </div>
+
+    <div class="filtro-actions">
+      <button type="button" pButton label="Limpar Filtros" icon="pi pi-trash" class="p-button-outlined btn-limpar" (click)="limparFiltros()"></button>
+      <button type="submit" pButton label="Aplicar Filtros" class="p-button-help btn-aplicar"></button>
+    </div>
+  </form>
+</div>

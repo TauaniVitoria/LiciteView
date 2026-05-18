@@ -1,0 +1,16 @@
+.sidebar-container {
+  width: 250px;
+  background-color: #ffffff;
+  border-right: 1px solid #f1f5f9;
+  box-shadow: 1px 0 3px rgba(0,0,0,0.02);
+}
+
+.active-link {
+  background-color: #f1f5f9;
+  color: #0f172a !important;
+  font-weight: 600;
+  
+  i {
+    color: #0f172a;
+  }
+}
