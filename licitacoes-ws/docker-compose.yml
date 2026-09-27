@@ -1,0 +1,27 @@
+services:
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      START_CELERY_WORKER: "false"   # worker roda em container separado
+    ports:
+      - "8000:8000"
+    mem_limit: 700m
+    cpus: 0.5
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    mem_limit: 1800m
+    cpus: 1.0
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=1 --prefetch-multiplier=1 --pool=solo
