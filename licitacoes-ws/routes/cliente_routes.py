@@ -84,8 +84,9 @@ async def buscar_licitacoes(
     if poderes:
         params["poderes"] = poderes
 
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
             response = await client.get(PNCP_SEARCH_URL, params=params)
             response.raise_for_status()
             return response.json()
