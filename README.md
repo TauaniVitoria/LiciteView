@@ -1,28 +1,50 @@
 # LiciteView
 
-Plataforma web para avaliar oportunidades em licitações públicas brasileiras. O sistema busca editais no PNCP, gera um resumo do edital por IA, responde perguntas sobre o documento e calcula se vale a pena participar com um produto do fornecedor.
+Plataforma SaaS para busca, análise inteligente (RAG) e cálculo de viabilidade financeira em licitações públicas brasileiras, integrada à API oficial do **PNCP** (Portal Nacional de Contratações Públicas).
 
-Projeto da disciplina Tecnologias e Programação Integrada — Ciências da Computação, Unisagrado (Bauru, 2026).
+---
 
-## Componentes
+## Principais Funcionalidades
 
-| Pasta | O que é | Como rodar |
-| --- | --- | --- |
-| [`licitacoes-ws/`](licitacoes-ws/) | Backend: API FastAPI e worker Celery | [README do backend](licitacoes-ws/README.md) |
-| [`liciteview-angular/`](liciteview-angular/) | Frontend: aplicação Angular 17 | [README do frontend](liciteview-angular/README.md) |
+- **Busca no PNCP:** Consulta de editais por palavra-chave, modalidade, UF, esfera, poder e status.
+- **Resumo Estruturado por IA:** Processamento automático do PDF do edital em 5 blocos (Visão Geral, Prazos e Execução, Documentação Exigida, Requisitos Técnicos e Riscos/Penalidades).
+- **Análise de Viabilidade e Logística:** Cruzamento determinístico do edital com o catálogo de produtos do fornecedor, calculando margem líquida, tributos e frete via **Tabela ANTT**.
+- **Chat com o Edital (RAG Híbrido):** Perguntas e respostas em linguagem natural sobre o documento com busca semântica + textual (Qdrant + BM25) e indicação da página de origem.
+- **Histórico e Notificações:** Acompanhamento centralizado dos editais analisados e alertas de conclusão de processamento.
 
-Para rodar localmente, siga primeiro o README do backend e depois o do frontend.
+## Estrutura do Projeto
 
-## Documentação
+| Diretório / Arquivo | Descrição |
+| :--- | :--- |
+| [`licitacoes-ws/`](licitacoes-ws/) | Backend em Python (**FastAPI**, **SQLAlchemy**, **Celery**, **Redis**, **Qdrant** e **Groq LLM**) |
+| [`liciteview-angular/`](liciteview-angular/) | Frontend em **Angular 17** e **PrimeNG** |
+| [`docs/documentacao-tecnica.md`](docs/documentacao-tecnica.md) | Documentação técnica completa da arquitetura, API e pipeline RAG |
+| [`demonstracao-liciteview.mp4`](demonstracao-liciteview.mp4) | Vídeo demonstrativo da plataforma em funcionamento |
 
-| Documento | Conteúdo |
-| --- | --- |
-| [`docs/documentacao-tecnica.md`](docs/documentacao-tecnica.md) | Documentação técnica atual: arquitetura, pipeline de IA, API, modelo de dados, manual do usuário e limitações |
-| [`docs/documentacao-tecnica.pdf`](docs/documentacao-tecnica.pdf) | A mesma documentação, em PDF (23 páginas), gerada a partir do arquivo acima |
-| [`CORRECOES.md`](CORRECOES.md) | Correções de outubro de 2026: o que foi feito, por quê e como foi verificado |
-| [`RELATORIO-ANALISE.md`](RELATORIO-ANALISE.md) | Análise do sistema antes dessas correções |
-| [`documentacao-liciteview.pdf`](documentacao-liciteview.pdf) | Versão anterior da documentação técnica (maio de 2026), mantida para referência |
+## Como Executar Localmente
 
-## Serviços externos
+### 1. Backend (`licitacoes-ws`)
 
-O sistema depende de Redis (fila), Qdrant (banco vetorial), Groq (modelo de linguagem) e, opcionalmente, Cohere (reordenação da busca). Todos têm plano gratuito. O plano gratuito da Groq limita o uso diário e comporta poucas dezenas de processamentos e perguntas por dia.
+```bash
+cd licitacoes-ws
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # Configure suas chaves (DATABASE_URL, REDIS_URL, QDRANT e GROQ_API_KEY)
+alembic upgrade head
+python seed_antt.py
+
+# Iniciar API e Worker Celery
+uvicorn main:app --reload
+celery -A tasks.celery_app worker --loglevel=info --pool=solo
+```
+
+### 2. Frontend (`liciteview-angular`)
+
+```bash
+cd liciteview-angular
+npm install
+npm start
+```
+
+Acesse a aplicação em `http://localhost:4200` (API e Swagger em `http://localhost:8000/docs`).
