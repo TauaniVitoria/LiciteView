@@ -12,15 +12,6 @@ Plataforma SaaS para busca, análise inteligente (RAG) e cálculo de viabilidade
 - **Chat com o Edital (RAG Híbrido):** Perguntas e respostas em linguagem natural sobre o documento com busca semântica + textual (Qdrant + BM25) e indicação da página de origem.
 - **Histórico e Notificações:** Acompanhamento centralizado dos editais analisados e alertas de conclusão de processamento.
 
-## Estrutura do Projeto
-
-| Diretório / Arquivo | Descrição |
-| :--- | :--- |
-| [`licitacoes-ws/`](licitacoes-ws/) | Backend em Python (**FastAPI**, **SQLAlchemy**, **Celery**, **Redis**, **Qdrant** e **Groq LLM**) |
-| [`liciteview-angular/`](liciteview-angular/) | Frontend em **Angular 17** e **PrimeNG** |
-| [`docs/documentacao-tecnica.md`](docs/documentacao-tecnica.md) | Documentação técnica completa da arquitetura, API e pipeline RAG |
-| [`demonstracao-liciteview.mp4`](demonstracao-liciteview.mp4) | Vídeo demonstrativo da plataforma em funcionamento |
-
 ## Como Executar Localmente
 
 ### 1. Backend (`licitacoes-ws`)
