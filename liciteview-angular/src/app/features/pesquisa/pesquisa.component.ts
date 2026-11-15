@@ -12,7 +12,6 @@ import { TagModule } from 'primeng/tag';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { LicitacaoService, SearchResult } from '../../core/services/licitacao.service';
 import { AnaliseService } from '../../core/services/analise.service';
-import { EditalService } from '../../core/services/edital.service';
 import { Licitacao, SearchFilters } from '../../core/models/licitacao.model';
 
 interface ViewOption { label: string; value: 'cards' | 'table' }
@@ -219,7 +218,6 @@ interface ViewOption { label: string; value: 'cards' | 'table' }
 export class PesquisaComponent {
   private readonly svc = inject(LicitacaoService);
   private readonly analise = inject(AnaliseService);
-  private readonly editalSvc = inject(EditalService);
   private readonly router = inject(Router);
 
   readonly opt = this.svc.filtroOpcoes;
@@ -270,18 +268,8 @@ export class PesquisaComponent {
   }
 
   open(l: Licitacao): void {
-    // Dispara o processamento em segundo plano imediatamente para garantir a inserção no histórico
-    this.editalSvc.processar({
-      id_pncp:        l.id,
-      titulo:         l.titulo,
-      orgao:          l.orgao,
-      objeto:         l.titulo,
-      modalidade:     l.modalidade,
-      valor_estimado: l.valor ?? undefined,
-      url_origem:     l.url_origem ?? undefined,
-      data_abertura:  l.abertura ? l.abertura.split('T')[0] : undefined,
-    }).subscribe();
-
+    // O processamento é disparado pela tela do edital (EditalComponent.ngOnInit);
+    // chamá-lo aqui também criava duas tarefas para o mesmo edital.
     this.router.navigate(['/edital', l.id]);
   }
 

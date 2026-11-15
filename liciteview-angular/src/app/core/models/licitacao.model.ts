@@ -23,6 +23,7 @@ export interface Licitacao {
   diasRestantes: number;
   url_origem: string | null;
   status_processamento?: 'PENDENTE' | 'PROCESSANDO' | 'PROCESSADO' | 'ERRO';
+  analise_classificacao?: 'VALE_A_PENA' | 'ATENCAO' | 'NAO_RECOMENDADO' | null;
 }
 
 // ── Resumo estruturado gerado pelo pipeline RAG ───────────────────────────────
@@ -115,6 +116,7 @@ export interface PncpItem {
   tipo_nome?: string;                   // "Edital", "Aviso de Contratação Direta"
   cancelado?: boolean;
   status_processamento?: 'PENDENTE' | 'PROCESSANDO' | 'PROCESSADO' | 'ERRO';
+  analise_classificacao?: 'VALE_A_PENA' | 'ATENCAO' | 'NAO_RECOMENDADO' | null;
 }
 
 export interface PncpSearchResponse {
@@ -169,5 +171,6 @@ export function mapPncpItemToLicitacao(item: PncpItem): Licitacao {
     diasRestantes: calcDiasRestantes(encerramento),
     url_origem:  item.item_url ? `https://pncp.gov.br${item.item_url}` : null,
     status_processamento: item.status_processamento,
+    analise_classificacao: item.analise_classificacao,
   };
 }

@@ -1,9 +1,11 @@
-# liciteview-angular — Frontend LicitiView
+# liciteview-angular — Frontend LiciteView
 
 Interface web em **Angular 17** para busca e análise de licitações públicas do PNCP.
 
 > O backend precisa estar rodando antes de usar o frontend.
-> Veja as instruções em `../licitacoes-ws/README.md`.
+> Veja as instruções em [`../licitacoes-ws/README.md`](../licitacoes-ws/README.md).
+
+Documentação técnica completa: [`../docs/documentacao-tecnica.md`](../docs/documentacao-tecnica.md).
 
 ---
 
@@ -14,24 +16,17 @@ Interface web em **Angular 17** para busca e análise de licitações públicas 
 | Node.js | 18.x |
 | npm | 9.x (incluído no Node.js) |
 
-Verifique as versões instaladas:
-
-```bash
-node -v
-npm -v
-```
-
 ---
 
 ## Instalação
 
 ```bash
-# 1. Entre na pasta do frontend
 cd liciteview-angular
-
-# 2. Instale as dependências
 npm install
 ```
+
+> A pasta `node_modules` depende do sistema operacional. Não a copie de outra máquina:
+> apague-a e rode `npm install` de novo.
 
 ---
 
@@ -41,10 +36,15 @@ npm install
 npm start
 ```
 
-O navegador abrirá automaticamente em <http://localhost:4200>.
+O navegador abre em <http://localhost:4200>.
 
-O frontend espera a API em `http://127.0.0.1:8000` (padrão do backend em dev).
-Se precisar mudar, edite `src/environments/environment.ts`:
+**Se a porta 4200 estiver ocupada**, o Angular sobe em uma porta aleatória, e o backend recusa as chamadas por CORS. Nesse caso, fixe a porta e inclua o endereço em `ALLOWED_ORIGINS`, no `.env` do backend:
+
+```bash
+npm start -- --port 4201
+```
+
+O frontend espera a API em `http://127.0.0.1:8000`. Para mudar, edite `src/environments/environment.ts`:
 
 ```typescript
 export const environment = {
@@ -60,62 +60,70 @@ export const environment = {
 | Comando | Descrição |
 | --- | --- |
 | `npm start` | Servidor de desenvolvimento (abre o navegador) |
-| `npm run build` | Build de desenvolvimento na pasta `dist/` |
-| `ng build --configuration production` | Build otimizado para produção |
+| `npm run build` | Build de produção na pasta `dist/` |
+| `npx ngc -p tsconfig.app.json --noEmit` | Verifica tipos e templates sem gerar arquivos |
+
+**Testes.** Existem arquivos `.spec.ts` para os serviços, mas o projeto ainda não tem executor de testes configurado (não há Karma nem script `npm test`).
 
 ---
 
-## Estrutura do Projeto
+## Estrutura do projeto
 
 ```text
 src/
 ├── app/
 │   ├── app.component.ts        # Componente raiz (RouterOutlet)
-│   ├── app.config.ts           # Providers globais, interceptors HTTP
+│   ├── app.config.ts           # Providers globais e interceptor HTTP
 │   ├── app.routes.ts           # Rotas com authGuard (lazy loading)
 │   ├── core/
 │   │   ├── models/             # Interfaces TypeScript (Licitacao, Produto, Analise...)
-│   │   ├── services/           # AuthService, LicitacaoService, EditalService...
-│   │   └── interceptors/       # Injeta token JWT em todas as requisições
+│   │   ├── services/           # AuthService, LicitacaoService, EditalService, AnaliseService...
+│   │   └── interceptors/       # Envia o token JWT em todas as requisições
 │   ├── features/
-│   │   ├── auth/               # Telas de login e cadastro
+│   │   ├── auth/               # Login e cadastro
 │   │   ├── pesquisa/           # Busca de licitações com filtros do PNCP
-│   │   ├── edital/             # Detalhes do edital: Resumo / Viabilidade / Chat
-│   │   ├── produtos/           # Catálogo de produtos (lista + formulário)
-│   │   └── historico/          # Histórico de análises realizadas
-│   └── layout/                 # Shell da aplicação (navbar + sidebar)
+│   │   ├── edital/             # Edital: Resumo / Viabilidade / Chat
+│   │   ├── produtos/           # Lista e formulário de produtos (cadastro e edição)
+│   │   └── historico/          # Editais abertos pelo usuário
+│   └── layout/                 # Estrutura da aplicação e notificações
 ├── environments/
-│   ├── environment.ts          # Configuração de desenvolvimento
-│   └── environment.prod.ts     # Configuração de produção
-└── styles.scss                 # Tema global e tokens de design
+│   ├── environment.ts          # Desenvolvimento
+│   └── environment.prod.ts     # Produção
+└── styles.scss                 # Tema global
 ```
 
 ---
 
-## Rotas da Aplicação
+## Rotas da aplicação
 
 | Rota | Tela |
 | --- | --- |
 | `/login` | Login |
 | `/register` | Cadastro de fornecedor |
 | `/pesquisa` | Busca de licitações (PNCP) |
-| `/edital/:id` | Detalhes do edital (Resumo / Viabilidade / Chat) |
+| `/edital/:id` | Edital: Resumo, Viabilidade e Chat |
 | `/produtos` | Lista de produtos do fornecedor |
-| `/produtos/novo` | Criar ou editar produto |
-| `/historico` | Histórico de análises |
+| `/produtos/novo` | Cadastro de produto |
+| `/produtos/:id/editar` | Edição de produto |
+| `/historico` | Editais abertos pelo usuário, com status e classificação de viabilidade |
+
+O `:id` do edital é o número de controle do PNCP, que contém uma barra. Em links montados à mão, a barra precisa estar codificada (`%2F`).
 
 ---
 
-## Solução de Problemas
+## Solução de problemas
 
-**`ng serve` não reconhecido**
-→ Instale o Angular CLI: `npm install -g @angular/cli@17`
+**Cadastro ou login não funcionam, e o backend registra `OPTIONS ... 400`**
+→ É CORS. O endereço do frontend, com a porta, não está em `ALLOWED_ORIGINS` no `.env` do backend. Ver "Rodando o projeto".
 
-**Erros de CORS ao chamar a API**
-→ Confirme que `ALLOWED_ORIGINS` no `.env` do backend contém `http://localhost:4200`.
+**`ng serve` falha ao iniciar depois de copiar o projeto de outra máquina**
+→ A pasta `node_modules` veio de outro sistema operacional. Apague-a e rode `npm install`.
 
-**Tela em branco após login**
+**Tela em branco após o login**
 → Abra o DevTools (F12) → Console e verifique se a API responde em <http://127.0.0.1:8000/health>.
 
+**A tela do edital fica em "Processando" por muito tempo**
+→ Confira no terminal do backend se o worker Celery está rodando. Ver o README do backend.
+
 **`npm install` com erros**
-→ Confirme Node.js 18+: `node -v`. Se necessário, limpe o cache: `npm cache clean --force`.
+→ Confirme Node.js 18 ou superior: `node -v`. Se necessário: `npm cache clean --force`.

@@ -18,6 +18,7 @@ if DATABASE_URL.startswith("postgresql"):
         pool_size=3,
         max_overflow=5,
         connect_args={
+            "connect_timeout": 5,
             "keepalives": 1,
             "keepalives_idle": 30,
             "keepalives_interval": 10,

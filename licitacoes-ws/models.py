@@ -5,10 +5,13 @@ from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime,
-    Enum, ForeignKey, Integer, LargeBinary, Numeric, String, Text, func
+    Enum, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, func, JSON, Uuid
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy.orm import DeclarativeBase, deferred, relationship
+
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+UUID_TYPE = PGUUID(as_uuid=True).with_variant(Uuid(as_uuid=True), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -78,7 +81,7 @@ class StatusExecucao(str, enum.Enum):
 class Usuario(Base):
     __tablename__ = "usuario"
 
-    id            = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id            = Column(UUID_TYPE, primary_key=True, default=uuid4)
     nome          = Column(String(255), nullable=False)
     email         = Column(String(255), nullable=False, unique=True)
     senha_hash    = Column(String(255), nullable=False)
@@ -100,8 +103,8 @@ class Usuario(Base):
 class Produto(Base):
     __tablename__ = "produto"
 
-    id                = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    usuario_id        = Column(PGUUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    id                = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    usuario_id        = Column(UUID_TYPE, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
     nome              = Column(String(255), nullable=False)
     descricao         = Column(Text)
     categoria         = Column(Enum(CategoriaProduto, name='categoria_produto'), nullable=False, default=CategoriaProduto.OUTRO)
@@ -126,7 +129,7 @@ class Produto(Base):
 class Edital(Base):
     __tablename__ = "edital"
 
-    id                   = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id                   = Column(UUID_TYPE, primary_key=True, default=uuid4)
     id_pncp              = Column(String(100), nullable=False, unique=True)
     titulo               = Column(String(500))
     orgao                = Column(String(500), nullable=False)
@@ -136,9 +139,14 @@ class Edital(Base):
     valor_estimado       = Column(Numeric(18, 4))
     data_publicacao      = Column(Date)
     data_abertura        = Column(Date)
+    # Local do órgão comprador, vindo do PNCP — usado como destino do frete na viabilidade
+    uf                   = Column(String(2))
+    municipio            = Column(String(255))
     url_origem           = Column(String(1000))
     url_pdf              = Column(String(1000))
-    pdf_conteudo         = Column(LargeBinary, nullable=True)
+    # deferred: o PDF só é lido do banco quando o atributo é acessado (worker e upload).
+    # Sem isso, toda consulta de edital — histórico, polling de status — trazia o arquivo inteiro.
+    pdf_conteudo         = deferred(Column(LargeBinary, nullable=True))
     hash_documento       = Column(String(64))
     status_processamento = Column(Enum(StatusProcessamento, name='status_processamento'), nullable=False, default=StatusProcessamento.PENDENTE)
     criado_em            = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -153,11 +161,22 @@ class Edital(Base):
     execucoes            = relationship("ExecucaoProcesso",    back_populates="edital")
 
 
+class UsuarioEdital(Base):
+    """Editais que o usuário abriu ou enviou. Define o que ele pode ver e consultar."""
+    __tablename__ = "usuario_edital"
+    __table_args__ = (UniqueConstraint("usuario_id", "edital_id", name="uq_usuario_edital"),)
+
+    id         = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    usuario_id = Column(UUID_TYPE, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False, index=True)
+    edital_id  = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    criado_em  = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class SecaoEdital(Base):
     __tablename__ = "secao_edital"
 
-    id             = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id      = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    id             = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id      = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
     titulo         = Column(String(500))
     ordem          = Column(Integer, nullable=False)
     texto_bruto    = Column(Text, nullable=False)
@@ -172,9 +191,9 @@ class SecaoEdital(Base):
 class ChunkEdital(Base):
     __tablename__ = "chunk_edital"
 
-    id               = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id        = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
-    secao_id         = Column(PGUUID(as_uuid=True), ForeignKey("secao_edital.id", ondelete="SET NULL"))
+    id               = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id        = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    secao_id         = Column(UUID_TYPE, ForeignKey("secao_edital.id", ondelete="SET NULL"))
     ordem            = Column(Integer, nullable=False)
     texto            = Column(Text, nullable=False)
     tokens           = Column(Integer, nullable=False)
@@ -193,10 +212,10 @@ class ChunkEdital(Base):
 class ResumoEdital(Base):
     __tablename__ = "resumo_edital"
 
-    id            = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id     = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    id            = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id     = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
     versao        = Column(Integer, nullable=False, default=1)
-    json_resumo   = Column(JSONB, nullable=False)
+    json_resumo   = Column(JSON_TYPE, nullable=False)
     modelo_usado  = Column(String(100))
     versao_prompt = Column(String(50))
     ativo         = Column(Boolean, nullable=False, default=True)
@@ -208,8 +227,8 @@ class ResumoEdital(Base):
 class VariavelViabilidade(Base):
     __tablename__ = "variavel_viabilidade"
 
-    id             = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id      = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    id             = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id      = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
     nome_variavel  = Column(String(100), nullable=False)
     valor_extraido = Column(Text, nullable=False)
     unidade        = Column(String(50))
@@ -223,7 +242,7 @@ class VariavelViabilidade(Base):
 class TabelaFreteANTT(Base):
     __tablename__ = "tabela_frete_antt"
 
-    id              = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id              = Column(UUID_TYPE, primary_key=True, default=uuid4)
     tabela_origem   = Column(String(1), nullable=False)
     tipo_carga_cod  = Column(Integer, nullable=False)
     tipo_carga_nome = Column(String(100), nullable=False)
@@ -244,10 +263,10 @@ class TabelaFreteANTT(Base):
 class AnaliseViabilidade(Base):
     __tablename__ = "analise_viabilidade"
 
-    id                     = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id              = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
-    produto_id             = Column(PGUUID(as_uuid=True), ForeignKey("produto.id", ondelete="CASCADE"), nullable=False)
-    usuario_id             = Column(PGUUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    id                     = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id              = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    produto_id             = Column(UUID_TYPE, ForeignKey("produto.id", ondelete="CASCADE"), nullable=False)
+    usuario_id             = Column(UUID_TYPE, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
     margem_minima_snapshot = Column(Numeric(5, 4), nullable=False)
     preco_venda_snapshot   = Column(Numeric(15, 4), nullable=False)
     custo_produto_snapshot = Column(Numeric(15, 4), nullable=False)
@@ -259,6 +278,14 @@ class AnaliseViabilidade(Base):
     dentro_margem          = Column(Boolean, nullable=False)
     classificacao          = Column(Enum(ClassificacaoViabilidade, name='classificacao_viabilidade'), nullable=False)
     justificativa          = Column(Text)
+    # Detalhes do cálculo, guardados para a tela mostrar o mesmo resultado ao recarregar
+    quantidade_considerada = Column(Integer)
+    quantidade_origem      = Column(String(20))   # INFORMADA | ITEM_EDITAL | RESUMO_EDITAL | ESTIMADA
+    preco_proposta         = Column(Numeric(15, 4))   # preço por unidade usado na receita
+    valor_unitario_edital  = Column(Numeric(15, 4))   # valor estimado do item no edital (máximo aceito)
+    uf_origem              = Column(String(2))
+    uf_destino             = Column(String(2))
+    avisos                 = Column(JSON_TYPE)
     modelo_usado           = Column(String(100))
     versao_prompt          = Column(String(50))
     gerado_em              = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -271,9 +298,9 @@ class AnaliseViabilidade(Base):
 class PerguntaEdital(Base):
     __tablename__ = "pergunta_edital"
 
-    id            = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id     = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
-    usuario_id    = Column(PGUUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    id            = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id     = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="CASCADE"), nullable=False)
+    usuario_id    = Column(UUID_TYPE, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
     pergunta      = Column(Text, nullable=False)
     status        = Column(Enum(StatusPergunta, name='status_pergunta'), nullable=False, default=StatusPergunta.PENDENTE)
     criada_em     = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -292,12 +319,12 @@ class PerguntaEdital(Base):
 class Notificacao(Base):
     __tablename__ = "notificacao"
 
-    id         = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    usuario_id = Column(PGUUID(as_uuid=True), ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    id         = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    usuario_id = Column(UUID_TYPE, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
     tipo       = Column(String(50), nullable=False)   # EDITAL_PROCESSADO | EDITAL_ERRO
     titulo     = Column(String(500), nullable=False)
     mensagem   = Column(Text)
-    edital_id  = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="SET NULL"), nullable=True)
+    edital_id  = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="SET NULL"), nullable=True)
     referencia = Column(String(200))                  # id_pncp para navegação
     lida       = Column(Boolean, nullable=False, default=False)
     criada_em  = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -306,9 +333,9 @@ class Notificacao(Base):
 class ExecucaoProcesso(Base):
     __tablename__ = "execucao_processo"
 
-    id                = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    edital_id         = Column(PGUUID(as_uuid=True), ForeignKey("edital.id", ondelete="SET NULL"))
-    pergunta_id       = Column(PGUUID(as_uuid=True), ForeignKey("pergunta_edital.id", ondelete="SET NULL"))
+    id                = Column(UUID_TYPE, primary_key=True, default=uuid4)
+    edital_id         = Column(UUID_TYPE, ForeignKey("edital.id", ondelete="SET NULL"))
+    pergunta_id       = Column(UUID_TYPE, ForeignKey("pergunta_edital.id", ondelete="SET NULL"))
     tipo_processo     = Column(Enum(TipoProcesso, name='tipo_processo'), nullable=False)
     status            = Column(Enum(StatusExecucao, name='status_execucao'), nullable=False, default=StatusExecucao.PENDENTE)
     tentativas        = Column(Integer, nullable=False, default=0)

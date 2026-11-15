@@ -29,6 +29,7 @@ import { Licitacao } from '../../core/models/licitacao.model';
             <th>Modalidade</th>
             <th style="width: 150px;">Abertura</th>
             <th style="width: 150px; text-align: center;">Status do Resumo</th>
+            <th style="width: 150px; text-align: center;">Viabilidade</th>
             <th style="width: 110px;">Ações</th>
           </tr>
         </ng-template>
@@ -58,6 +59,12 @@ import { Licitacao } from '../../core/models/licitacao.model';
                 {{ getStatusLabel(e.status_processamento) }}
               </span>
             </td>
+            <td style="text-align: center;">
+              <span *ngIf="e.analise_classificacao as c; else semAnalise" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;">
+                <span class="dot" [ngClass]="'dot--' + viabilidadeCor(c)"></span>{{ viabilidadeLabel(c) }}
+              </span>
+              <ng-template #semAnalise><span style="color: var(--ink-3);">—</span></ng-template>
+            </td>
             <td>
               <div style="display: flex; gap: 4px;">
                 <button pButton type="button" label="Acessar" icon="pi pi-arrow-right" 
@@ -68,7 +75,7 @@ import { Licitacao } from '../../core/models/licitacao.model';
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="7">
+            <td colspan="8">
               <div class="empty" style="padding: 48px 0;">
                 <i class="pi pi-history" style="font-size: 32px; color: var(--ink-3); margin-bottom: 8px;"></i>
                 <div style="font-weight: 600; color: var(--ink-2);">Nenhum edital no histórico</div>
@@ -109,6 +116,14 @@ export class HistoricoComponent implements OnInit {
 
   acessar(e: Licitacao): void {
     this.router.navigate(['/edital', e.id]);
+  }
+
+  viabilidadeCor(c: string): string {
+    return c === 'VALE_A_PENA' ? 'green' : c === 'ATENCAO' ? 'amber' : 'red';
+  }
+
+  viabilidadeLabel(c: string): string {
+    return c === 'VALE_A_PENA' ? 'Vale a pena' : c === 'ATENCAO' ? 'Atenção' : 'Não recomendado';
   }
 
   getBadgeClass(status?: string): string {

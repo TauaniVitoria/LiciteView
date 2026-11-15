@@ -1,7 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map, tap } from 'rxjs';
-import { Analise } from '../models/analise.model';
+import { Observable, catchError, map, of, tap } from 'rxjs';
+import { Analise, QuantidadeOrigem } from '../models/analise.model';
 import { Verdict } from '../models/licitacao.model';
 import { environment } from '../../../environments/environment';
 
@@ -35,6 +35,14 @@ interface AnaliseBackendResponse {
   classificacao: Classificacao;
   justificativa: string | null;
   gerado_em: string;
+  distancia_km?: number | null;
+  quantidade_considerada?: number | null;
+  quantidade_origem?: QuantidadeOrigem | null;
+  uf_origem?: string | null;
+  uf_destino?: string | null;
+  avisos?: string[];
+  preco_proposta?: number | null;
+  valor_unitario_edital?: number | null;
 }
 
 function mapToAnalise(res: AnaliseBackendResponse, licitacaoId: string): Analise {
@@ -62,6 +70,16 @@ function mapToAnalise(res: AnaliseBackendResponse, licitacaoId: string): Analise
     custoLogistico:   custoFrete,
     analyzedAt:       res.gerado_em,
     receitaEstimada:  res.receita_estimada ? Number(res.receita_estimada) : undefined,
+    justificativa:    res.justificativa ?? undefined,
+    avisos:           res.avisos ?? [],
+    distanciaKm:      res.distancia_km != null ? Number(res.distancia_km) : undefined,
+    quantidade:       res.quantidade_considerada ?? undefined,
+    quantidadeOrigem: res.quantidade_origem ?? undefined,
+    ufOrigem:         res.uf_origem ?? undefined,
+    ufDestino:        res.uf_destino ?? undefined,
+    precoProduto:        res.preco_venda_snapshot != null ? Number(res.preco_venda_snapshot) : undefined,
+    precoProposta:       res.preco_proposta != null ? Number(res.preco_proposta) : undefined,
+    valorUnitarioEdital: res.valor_unitario_edital != null ? Number(res.valor_unitario_edital) : undefined,
   };
 }
 
@@ -79,21 +97,38 @@ export class AnaliseService {
 
   /**
    * Envia POST /cliente/analise e armazena o resultado no signal.
-   * O backend retorna análise cacheada se já existe para esse par edital+produto.
+   * O backend recalcula a cada chamada e mantém uma análise por edital + produto.
    */
-  analisar(editalId: string, produtoId: string, licitacaoId: string, valorReferencia?: number): Observable<Analise> {
+  analisar(editalId: string, produtoId: string, licitacaoId: string, quantidade?: number): Observable<Analise> {
     const body: any = {
       edital_id:  editalId,
       produto_id: produtoId,
     };
-    if (valorReferencia !== undefined && valorReferencia !== null) {
-      body.valor_referencia = valorReferencia;
+    // Opcional: sem ela, o backend usa a quantidade do item encontrado no edital
+    if (quantidade !== undefined && quantidade !== null && quantidade > 0) {
+      body.quantidade = quantidade;
     }
     return this.http
       .post<AnaliseBackendResponse>(`${this.url}/analise`, body)
       .pipe(
         map((res) => mapToAnalise(res, licitacaoId)),
         tap((analise) => this._analises.update((m) => ({ ...m, [licitacaoId]: analise }))),
+      );
+  }
+
+  /**
+   * Busca a análise já salva para o edital (se houver) e a coloca no signal.
+   * Usado ao abrir a tela, para o resultado não sumir ao recarregar a página.
+   */
+  carregar(editalId: string, licitacaoId: string): Observable<Analise | null> {
+    return this.http
+      .get<AnaliseBackendResponse | null>(`${this.url}/editais/${editalId}/analise`)
+      .pipe(
+        map((res) => (res ? mapToAnalise(res, licitacaoId) : null)),
+        tap((analise) => {
+          if (analise) this._analises.update((m) => ({ ...m, [licitacaoId]: analise }));
+        }),
+        catchError(() => of(null)),
       );
   }
 

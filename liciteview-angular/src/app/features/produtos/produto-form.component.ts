@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, signal } from '@angular/core';
+import { ChangeDetectorRef, Component, ChangeDetectionStrategy, Input, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -19,7 +19,7 @@ import { FILTRO_OPCOES } from '../../core/services/mock-data';
     <div class="page-h">
       <div>
         <button pButton type="button" label="Voltar" icon="pi pi-arrow-left" class="p-button-text p-button-sm" (click)="back()" style="margin-bottom: 8px;"></button>
-        <h1>Cadastrar novo produto</h1>
+        <h1>{{ id ? 'Editar produto' : 'Cadastrar novo produto' }}</h1>
         <p>Preencha as informações usadas pela análise de viabilidade.</p>
       </div>
     </div>
@@ -87,9 +87,13 @@ import { FILTRO_OPCOES } from '../../core/services/mock-data';
     </div>
   `,
 })
-export class ProdutoFormComponent {
+export class ProdutoFormComponent implements OnInit {
   private readonly svc    = inject(ProdutoService);
   private readonly router = inject(Router);
+  private readonly cdr    = inject(ChangeDetectorRef);
+
+  // Preenchido pela rota produtos/:id/editar; ausente em produtos/novo
+  @Input() id?: string;
 
   readonly ufs = FILTRO_OPCOES.uf;
 
@@ -108,6 +112,30 @@ export class ProdutoFormComponent {
     uf:               'SP',
   };
 
+  ngOnInit(): void {
+    if (!this.id) return;
+    // Recarrega a lista para funcionar também ao abrir a URL de edição diretamente
+    this.svc.carregar().subscribe((lista) => {
+      const p = lista.find((x) => x.id === this.id);
+      if (!p) {
+        this.router.navigateByUrl('/produtos');
+        return;
+      }
+      this.form = {
+        nome:              p.nome,
+        descricao:         p.descricao ?? '',
+        custo_produto:     Number(p.custo_produto),
+        preco_venda:       Number(p.preco_venda ?? 0),
+        impostos:          Number(p.impostos),
+        margem_minima_pct: Math.round(Number(p.margem_minima) * 10000) / 100,
+        peso_kg:           Number(p.peso_kg ?? 0),
+        cep:               p.cep ?? '',
+        uf:                p.uf ?? 'SP',
+      };
+      this.cdr.markForCheck();   // o componente é OnPush e o formulário não usa signals
+    });
+  }
+
   save(): void {
     if (!this.form.nome.trim()) {
       this.error.set('O nome do produto é obrigatório.');
@@ -121,7 +149,7 @@ export class ProdutoFormComponent {
     this.loading.set(true);
     this.error.set('');
 
-    this.svc.criar({
+    const dados = {
       nome:             this.form.nome.trim(),
       descricao:        this.form.descricao || undefined,
       custo_produto:    this.form.custo_produto,
@@ -131,7 +159,9 @@ export class ProdutoFormComponent {
       impostos:         this.form.impostos,
       cep:              this.form.cep || undefined,
       uf:               this.form.uf || undefined,
-    }).subscribe({
+    };
+    const requisicao = this.id ? this.svc.atualizar(this.id, dados) : this.svc.criar(dados);
+    requisicao.subscribe({
       next: () => this.router.navigateByUrl('/produtos'),
       error: () => {
         this.error.set('Erro ao salvar produto. Tente novamente.');

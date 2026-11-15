@@ -1,6 +1,6 @@
 import {
   Component, ChangeDetectionStrategy, Input, inject,
-  signal, ViewChild, ElementRef, AfterViewChecked,
+  signal, ViewChild, ElementRef, AfterViewChecked, OnChanges, SimpleChanges,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -67,7 +67,7 @@ interface ChatMessage {
     </div>
   `,
 })
-export class ChatTabComponent implements AfterViewChecked {
+export class ChatTabComponent implements AfterViewChecked, OnChanges {
   private readonly editalSvc = inject(EditalService);
 
   @Input({ required: true }) licitacao!: Licitacao;
@@ -91,6 +91,25 @@ export class ChatTabComponent implements AfterViewChecked {
   ]);
   readonly typing = signal(false);
   input = '';
+
+  private _historicoCarregado = false;
+
+  // Carrega as perguntas já feitas quando o id do edital fica disponível,
+  // para a conversa não sumir ao recarregar a página.
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['editalId'] || !this.editalId || this._historicoCarregado) return;
+    this._historicoCarregado = true;
+    this.editalSvc.historicoPerguntas(this.editalId).subscribe((perguntas) => {
+      const anteriores: ChatMessage[] = perguntas.flatMap((p) => [
+        { role: 'user' as const, text: p.pergunta },
+        { role: 'bot' as const, text: p.resposta ?? '', citation: p.pagina_fonte ? `A partir da página ${p.pagina_fonte} do edital` : p.trecho_fonte ? 'Trecho do edital' : undefined },
+      ]);
+      if (anteriores.length) {
+        // Mantém a saudação, depois o histórico, depois o que já foi enviado nesta sessão
+        this.messages.update((m) => [m[0], ...anteriores, ...m.slice(1)]);
+      }
+    });
+  }
 
   ngAfterViewChecked(): void {
     if (this.msgsRef) {
@@ -119,9 +138,13 @@ export class ChatTabComponent implements AfterViewChecked {
 
     this.editalSvc.perguntar(this.editalId, text).subscribe({
       next: (res) => {
+        const fim = res.pagina_fonte_final;
+        const origem = !res.pagina_fonte ? 'Trecho do edital'
+          : fim && fim !== res.pagina_fonte ? `Páginas ${res.pagina_fonte}–${fim} do edital`
+          : `Página ${res.pagina_fonte} do edital`;
         const citation = res.trecho_fonte
-          ? `Trecho do edital · ${res.chunks_utilizados} chunk(s) consultado(s)`
-          : `${res.chunks_utilizados} chunk(s) consultado(s)`;
+          ? `${origem} · ${res.chunks_utilizados} trecho(s) consultado(s)`
+          : `${res.chunks_utilizados} trecho(s) consultado(s)`;
 
         this.messages.update((m) => [
           ...m,
@@ -129,12 +152,13 @@ export class ChatTabComponent implements AfterViewChecked {
         ]);
         this.typing.set(false);
       },
-      error: () => {
+      error: (e: { error?: { detail?: unknown } }) => {
+        const detalhe = typeof e?.error?.detail === 'string' ? e.error.detail : null;
         this.messages.update((m) => [
           ...m,
           {
             role: 'bot',
-            text: 'Não foi possível obter resposta. Verifique se o edital foi processado e tente novamente.',
+            text: detalhe ?? 'Não foi possível obter resposta. Verifique se o edital foi processado e tente novamente.',
           },
         ]);
         this.typing.set(false);

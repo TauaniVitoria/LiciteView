@@ -109,7 +109,9 @@ export class LoginComponent {
       next: () => this.router.navigateByUrl('/pesquisa'),
       error: (e: HttpErrorResponse) => {
         this.error.set(
-          e.status === 401 ? 'E-mail ou senha inválidos.' : 'Erro ao conectar. Verifique se o servidor está rodando.'
+          e.status === 401 ? 'E-mail ou senha inválidos.'
+            : e.status === 429 ? 'Muitas tentativas de login. Aguarde um minuto e tente novamente.'
+            : 'Erro ao conectar. Verifique se o servidor está rodando.'
         );
         this.loading.set(false);
       },

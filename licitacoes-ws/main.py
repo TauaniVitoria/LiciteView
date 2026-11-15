@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from rate_limit import limiter
 from config import (
     SECRET_KEY,
     ALGORITHM,
@@ -16,8 +16,6 @@ from config import (
     hash_password,
     verify_password
 )
-
-limiter = Limiter(key_func=get_remote_address)
 
 _celery_worker: subprocess.Popen | None = None
 
@@ -43,7 +41,11 @@ app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:4200").split(",")
+raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,http://localhost:4200,http://127.0.0.1:4200,http://127.0.0.1:8000,http://localhost:8000"
+)
+ALLOWED_ORIGINS = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +55,19 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+from fastapi.responses import JSONResponse
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    # O detalhe fica só no log do servidor: a mensagem da exceção pode expor
+    # nomes de tabelas, caminhos e endereços de serviços.
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno do servidor. Tente novamente em instantes."},
+    )
 
 # As funções de autenticação e hash foram movidas para config.py
 

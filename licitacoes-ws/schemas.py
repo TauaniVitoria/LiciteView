@@ -170,6 +170,9 @@ class ResumoEditalResponse(BaseModel):
 class AnaliseViabilidadeCreate(BaseModel):
     edital_id:  UUID
     produto_id: UUID
+    # Quantidade que o fornecedor pretende ofertar. Opcional: sem ela, vale a do item no edital.
+    quantidade:       Optional[int]     = Field(None, gt=0, le=100_000_000)
+    # Valor total do lote, usado só para estimar a quantidade quando nada mais está disponível.
     valor_referencia: Optional[Decimal] = None
 
 
@@ -189,8 +192,22 @@ class AnaliseViabilidadeResponse(BaseModel):
     classificacao:          ClassificacaoViabilidade
     justificativa:          Optional[str]
     gerado_em:              datetime
+    # Detalhes do cálculo
+    quantidade_considerada: Optional[int] = None
+    quantidade_origem:      Optional[str] = None   # INFORMADA | ITEM_EDITAL | RESUMO_EDITAL | ESTIMADA
+    preco_proposta:         Optional[Decimal] = None
+    valor_unitario_edital:  Optional[Decimal] = None
+    uf_origem:              Optional[str] = None
+    uf_destino:             Optional[str] = None
+    avisos:                 list[str] = []
 
     model_config = {"from_attributes": True}
+
+    @field_validator("avisos", mode="before")
+    @classmethod
+    def _avisos_nulos(cls, v):
+        # Análises gravadas antes desses campos existirem têm avisos = NULL
+        return v or []
 
 
 class PerguntaCreate(BaseModel):
@@ -222,6 +239,10 @@ class EditalProcessarRequest(BaseModel):
     valor_estimado: Optional[Decimal] = None
     url_origem:     Optional[str]  = Field(None, max_length=1000)
     url_pdf:        Optional[str]  = Field(None, max_length=1000)
+    uf:             Optional[str]  = Field(None, max_length=2)
+    municipio:      Optional[str]  = Field(None, max_length=255)
+    # True só quando o usuário pede explicitamente para tentar de novo um edital com erro
+    reprocessar:    bool           = False
     data_publicacao: Optional[date] = None
     data_abertura:   Optional[date] = None
 

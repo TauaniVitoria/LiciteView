@@ -13,9 +13,11 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
 from fastembed import TextEmbedding
 
+from arquivos import ErroDefinitivo
 from config import COHERE_API_KEY
 
-_model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_model = TextEmbedding(EMBEDDING_MODEL)
 _groq = Groq()
 _qdrant = QdrantClient(
     url=os.getenv("QDRANT_HOST"),
@@ -23,9 +25,29 @@ _qdrant = QdrantClient(
 )
 
 VECTOR_SIZE = 384  # dimensão fixa do all-MiniLM-L6-v2
-CHUNK_WORDS = 450
-OVERLAP_WORDS = 75
-LLM_MODEL = "llama-3.1-8b-instant"
+# Trechos menores cabem em maior número no contexto do LLM e são representados por inteiro
+# no vetor (o modelo lê ~256 tokens; com 450 palavras mais da metade do trecho ficava de fora).
+CHUNK_WORDS = 200
+OVERLAP_WORDS = 40
+
+# Busca híbrida: candidatos da busca vetorial + candidatos da busca por palavras, reordenados.
+# Medido no edital real (14 perguntas): só vetorial recuperava a resposta em 9; híbrida, em 14.
+N_VETORIAL = 12
+N_PALAVRAS = 12
+# O contexto é limitado em palavras, não em número de trechos, para funcionar igual com as
+# coleções antigas (trechos de 450 palavras) e as novas (200).
+PALAVRAS_CHAT = 2250
+PALAVRAS_RESUMO = 1000
+LLM_MODEL = "openai/gpt-oss-20b"
+# O gpt-oss raciocina antes de responder; com o esforço padrão ele às vezes gasta
+# a resposta inteira raciocinando e a Groq devolve 400 json_validate_failed.
+LLM_REASONING_EFFORT = "low"
+TENTATIVAS_BLOCO = 3
+
+
+def nome_colecao(edital_id) -> str:
+    """Nome da coleção do edital no Qdrant (única fonte, usada por worker, chat e viabilidade)."""
+    return f"edital_{str(edital_id).replace('-', '_')}"
 
 # ── Coordenadas aproximadas das capitais brasileiras ─────────────────────────
 _COORDS = {
@@ -149,12 +171,12 @@ def _desempacotar_pdf_de_zip(pdf_bytes: bytes) -> bytes:
         return z.read(alvo)
 
 
-def extrair_texto_pdf(pdf_bytes: bytes) -> str:
-    """Extrai texto do PDF usando PyMuPDF (fitz) — leve, sem torch/ML.
+def extrair_paginas(pdf_bytes: bytes) -> list[str]:
+    """Extrai o texto do PDF, uma string por página (posição 0 = página 1).
 
-    PyMuPDF detecta estrutura de seções por tamanho de fonte e gera
-    texto hierárquico (# título, ## subtítulo) adequado para chunking.
-    Fallback para pypdf em caso de erro.
+    Usa PyMuPDF (fitz) — leve, sem torch/ML —, que detecta títulos pelo tamanho da fonte
+    e gera texto hierárquico (# título, ## subtítulo). Fallback para pypdf em caso de erro.
+    Páginas sem texto ficam como string vazia, para a numeração não se perder.
     """
     pdf_bytes = _desempacotar_pdf_de_zip(pdf_bytes)
 
@@ -162,7 +184,7 @@ def extrair_texto_pdf(pdf_bytes: bytes) -> str:
         import fitz  # PyMuPDF
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        partes: list[str] = []
+        paginas: list[str] = []
 
         for page in doc:
             blocos = page.get_text("dict").get("blocks", [])
@@ -190,20 +212,30 @@ def extrair_texto_pdf(pdf_bytes: bytes) -> str:
                     paragrafos.append(f"## {texto_bloco}")
                 else:
                     paragrafos.append(texto_bloco)
-            if paragrafos:
-                partes.append("\n\n".join(paragrafos))
+            paginas.append("\n\n".join(paragrafos))
 
         doc.close()
-        resultado = "\n\n".join(partes)
-        if resultado.strip():
-            return resultado
+        if any(p.strip() for p in paginas):
+            return paginas
     except Exception:
         pass
 
     # Fallback para pypdf
-    import pypdf
-    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-    return "\n\n".join(p.extract_text() or "" for p in reader.pages)
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        return [p.extract_text() or "" for p in reader.pages]
+    except Exception as exc:
+        print(f"[PDF] Nenhuma biblioteca conseguiu ler o arquivo: {exc.__class__.__name__}: {exc}")
+        raise ErroDefinitivo(
+            "Não foi possível ler o PDF: o arquivo está corrompido ou protegido por senha. "
+            "Envie outra cópia do edital em PDF."
+        ) from exc
+
+
+def extrair_texto_pdf(pdf_bytes: bytes) -> str:
+    """Texto completo do PDF (todas as páginas com texto, separadas por linha em branco)."""
+    return "\n\n".join(p for p in extrair_paginas(pdf_bytes) if p.strip())
 
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
@@ -220,74 +252,193 @@ def chunkar_texto(texto: str, tamanho: int = CHUNK_WORDS, overlap: int = OVERLAP
     return chunks
 
 
+def chunkar_paginas(paginas: list[str], tamanho: int = CHUNK_WORDS, overlap: int = OVERLAP_WORDS) -> list[dict]:
+    """Divide o texto em trechos de `tamanho` palavras, guardando de que páginas cada um veio.
+
+    Devolve [{"text", "pagina_inicial", "pagina_final"}], com páginas numeradas a partir de 1.
+    """
+    palavras: list[tuple[str, int]] = [
+        (palavra, numero) for numero, texto in enumerate(paginas, start=1) for palavra in texto.split()
+    ]
+    passo = max(1, tamanho - overlap)
+    trechos: list[dict] = []
+    for i in range(0, len(palavras), passo):
+        janela = palavras[i: i + tamanho]
+        if not janela:
+            break
+        trechos.append({
+            "text": " ".join(p for p, _ in janela),
+            "pagina_inicial": janela[0][1],
+            "pagina_final": janela[-1][1],
+        })
+        if i + tamanho >= len(palavras):
+            break
+    return trechos
+
+
 # ── Qdrant ────────────────────────────────────────────────────────────────────
 
-def _criar_colecao(collection_name: str):
+def _recriar_colecao(collection_name: str):
+    """Apaga a coleção, se existir, e cria de novo.
+
+    Um reprocessamento que gerasse menos trechos que o anterior deixava os trechos
+    antigos excedentes na coleção, misturados aos novos.
+    """
     try:
-        _qdrant.get_collection(collection_name)
+        _qdrant.delete_collection(collection_name)
     except Exception:
-        _qdrant.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-        )
+        pass
+    _qdrant.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+    )
+    _cache_trechos.pop(collection_name, None)
 
 
-def _indexar_chunks(collection_name: str, chunks: list[str]):
-    embeddings = list(_model.embed(chunks))  # fastembed: batch eficiente
+def _indexar_trechos(collection_name: str, trechos: list[dict]):
+    embeddings = list(_model.embed([t["text"] for t in trechos]))  # fastembed: batch eficiente
     points = [
-        PointStruct(id=idx, vector=emb.tolist(), payload={"text": chunk, "ordem": idx})
-        for idx, (chunk, emb) in enumerate(zip(chunks, embeddings))
+        PointStruct(id=idx, vector=emb.tolist(), payload={**trecho, "ordem": idx})
+        for idx, (trecho, emb) in enumerate(zip(trechos, embeddings))
     ]
     _qdrant.upsert(collection_name=collection_name, points=points, wait=True)
 
 
-def rerank_chunks(query: str, chunks: list[str], top_n: int = 5) -> list[str]:
-    """Reordena os chunks com base na relevância semântica usando Cohere Rerank.
+# Trechos de cada coleção, para a busca por palavras: {coleção: (instante, trechos)}.
+_cache_trechos: dict[str, tuple[float, list[dict]]] = {}
+CACHE_TRECHOS_TTL_S = 300
 
-    Faz fallback silencioso para os top_n chunks originais em caso de falha.
+
+def _todos_trechos(collection_name: str) -> list[dict]:
+    """Todos os trechos da coleção, em ordem. Um edital tem dezenas a poucas centenas."""
+    em_cache = _cache_trechos.get(collection_name)
+    if em_cache and time.time() - em_cache[0] < CACHE_TRECHOS_TTL_S:
+        return em_cache[1]
+
+    trechos: list[dict] = []
+    offset = None
+    while True:
+        pontos, offset = _qdrant.scroll(
+            collection_name=collection_name, limit=256, offset=offset,
+            with_payload=True, with_vectors=False,
+        )
+        trechos.extend(p.payload for p in pontos)
+        if offset is None:
+            break
+    trechos.sort(key=lambda t: t.get("ordem", 0))
+    _cache_trechos[collection_name] = (time.time(), trechos)
+    return trechos
+
+
+_STOPWORDS = set(
+    "a o e de da do das dos em no na nos nas um uma para por com que se os as ao aos e ser sao "
+    "qual quais como onde quando quanto ou seu sua seus suas pelo pela este esta isso esse essa ha".split()
+)
+
+
+def _palavras_chave(texto: str) -> list[str]:
+    import unicodedata
+    sem_acento = unicodedata.normalize("NFKD", texto.lower()).encode("ascii", "ignore").decode()
+    return [p for p in re.findall(r"[a-z0-9]+", sem_acento) if p not in _STOPWORDS and len(p) > 1]
+
+
+def _ordenar_por_palavras(trechos: list[dict], query: str, n: int) -> list[int]:
+    """Índices dos `n` trechos mais relevantes por correspondência de palavras (BM25).
+
+    Complementa a busca vetorial: perguntas factuais ("qual o prazo de entrega?") costumam
+    usar as mesmas palavras do edital, e o modelo de embeddings usado é fraco em português.
     """
-    if not COHERE_API_KEY or not chunks:
-        return chunks[:top_n]
+    from collections import Counter
 
+    termos = _palavras_chave(query)
+    docs = [_palavras_chave(t.get("text", "")) for t in trechos]
+    if not termos or not docs:
+        return []
+    total = len(docs)
+    media = (sum(len(d) for d in docs) / total) or 1.0
+    frequencia_doc = Counter(p for d in docs for p in set(d))
+    k1, b = 1.5, 0.75
+
+    pontuacoes: list[tuple[float, int]] = []
+    for idx, doc in enumerate(docs):
+        tf = Counter(doc)
+        pontos = 0.0
+        for termo in termos:
+            if termo in tf:
+                idf = math.log(1 + (total - frequencia_doc[termo] + 0.5) / (frequencia_doc[termo] + 0.5))
+                pontos += idf * tf[termo] * (k1 + 1) / (tf[termo] + k1 * (1 - b + b * len(doc) / media))
+        if pontos > 0:
+            pontuacoes.append((pontos, idx))
+    pontuacoes.sort(reverse=True)
+    return [idx for _, idx in pontuacoes[:n]]
+
+
+def _reordenar(query: str, textos: list[str]) -> list[int] | None:
+    """Ordem dos textos por relevância segundo o Cohere Rerank; None se indisponível."""
+    if not COHERE_API_KEY or not textos:
+        return None
     try:
-        import requests
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/json",
-            "Authorization": f"Bearer {COHERE_API_KEY}"
-        }
-        payload = {
-            "model": "rerank-multilingual-v3.0",
-            "query": query,
-            "documents": chunks,
-            "top_n": top_n
-        }
-        resp = requests.post("https://api.cohere.com/v1/rerank", json=payload, headers=headers, timeout=4.0)
+        resp = requests.post(
+            "https://api.cohere.com/v1/rerank",
+            json={"model": "rerank-multilingual-v3.0", "query": query, "documents": textos, "top_n": len(textos)},
+            headers={"accept": "application/json", "content-type": "application/json",
+                     "Authorization": f"Bearer {COHERE_API_KEY}"},
+            timeout=8.0,
+        )
         if resp.ok:
-            results = resp.json().get("results", [])
-            reranked = []
-            for r in results:
-                idx = r.get("index")
-                if idx is not None and idx < len(chunks):
-                    reranked.append(chunks[idx])
-            if reranked:
-                return reranked
+            ordem = [r.get("index") for r in resp.json().get("results", [])]
+            ordem = [i for i in ordem if isinstance(i, int) and 0 <= i < len(textos)]
+            if ordem:
+                return ordem
+        else:
+            print(f"[Rerank] Cohere respondeu {resp.status_code}")
     except Exception as e:
         print(f"[Rerank] Erro na chamada do Cohere Rerank: {e}")
+    return None
 
-    return chunks[:top_n]
 
+def buscar_trechos(collection_name: str, query: str, max_palavras: int = PALAVRAS_CHAT) -> list[dict]:
+    """Trechos mais relevantes para a pergunta, até `max_palavras` de contexto.
 
-def buscar_chunks(collection_name: str, query: str, top_k: int = 5) -> list[str]:
+    1. Candidatos: N_VETORIAL da busca vetorial + N_PALAVRAS da busca por palavras.
+    2. Reordenação pelo Cohere Rerank; sem ele, vale a ordem intercalada (palavras primeiro).
+    3. Corte pelo total de palavras (sempre devolve ao menos um trecho).
+    """
+    trechos = _todos_trechos(collection_name)
+    if not trechos:
+        return []
+
     query_vec = list(_model.embed([query]))[0].tolist()
-    # Se COHERE_API_KEY estiver configurado, buscamos mais candidatos para o reranking
-    limit = top_k * 3 if COHERE_API_KEY else top_k
-    results = _qdrant.query_points(collection_name=collection_name, query=query_vec, limit=limit, with_payload=True)
-    chunks = [hit.payload["text"] for hit in results.points]
+    resultado = _qdrant.query_points(
+        collection_name=collection_name, query=query_vec, limit=N_VETORIAL, with_payload=True,
+    )
+    por_vetor = [hit.payload.get("ordem") for hit in resultado.points]
+    por_vetor = [i for i in por_vetor if isinstance(i, int) and i < len(trechos)]
+    por_palavras = _ordenar_por_palavras(trechos, query, N_PALAVRAS)
 
-    if COHERE_API_KEY:
-        return rerank_chunks(query, chunks, top_n=top_k)
-    return chunks
+    candidatos: list[int] = []
+    for i in range(max(len(por_vetor), len(por_palavras))):
+        for lista in (por_palavras, por_vetor):
+            if i < len(lista) and lista[i] not in candidatos:
+                candidatos.append(lista[i])
+
+    ordem = _reordenar(query, [trechos[i]["text"] for i in candidatos])
+    if ordem is not None:
+        candidatos = [candidatos[i] for i in ordem]
+
+    escolhidos: list[dict] = []
+    total = 0
+    for idx in candidatos:
+        tamanho = len(trechos[idx]["text"].split())
+        if escolhidos and total + tamanho > max_palavras:
+            break
+        escolhidos.append(trechos[idx])
+        total += tamanho
+    return escolhidos
+
+
+def buscar_chunks(collection_name: str, query: str, max_palavras: int = PALAVRAS_CHAT) -> list[str]:
+    return [t["text"] for t in buscar_trechos(collection_name, query, max_palavras)]
 
 
 # ── Extração de variáveis do edital via LLM ───────────────────────────────────
@@ -327,6 +478,7 @@ Retorne JSON com esta estrutura exata:
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
+            reasoning_effort=LLM_REASONING_EFFORT,
             response_format={"type": "json_object"},
         )
         return json.loads(resp.choices[0].message.content)
@@ -346,94 +498,180 @@ _BLOCOS: dict[str, dict] = {
     "bloco1_visao_geral": {
         "query": "objeto da licitação órgão responsável modalidade critério julgamento número edital",
         "schema": {"objeto": None, "orgao": None, "modalidade": None, "criterio_julgamento": None, "numero_edital": None},
+        "campos": {
+            "objeto": "o que está sendo comprado ou contratado, em uma frase",
+            "orgao": "nome do órgão ou entidade compradora",
+            "modalidade": "modalidade da licitação (ex.: Pregão Eletrônico)",
+            "criterio_julgamento": "critério de julgamento (ex.: menor preço por item)",
+            "numero_edital": "número do edital ou do processo",
+        },
     },
     "bloco2_prazos": {
         "query": "prazo entrega vigência contrato local entrega data abertura proposta",
         "schema": {"prazo_entrega": None, "vigencia_contrato": None, "local_entrega": None, "data_abertura": None},
+        "campos": {
+            "prazo_entrega": "prazo para entrega dos bens ou execução do serviço",
+            "vigencia_contrato": "prazo de vigência do contrato ou da ata",
+            "local_entrega": "endereço ou local onde os bens devem ser entregues",
+            "data_abertura": "data e hora de abertura da sessão ou das propostas",
+        },
     },
     "bloco3_documentacao": {
         "query": "documentos habilitação regularidade fiscal certidão qualificação técnica econômica financeira",
         "schema": {"documentos_habilitacao": [], "regularidade_fiscal": [], "qualificacao_tecnica": []},
+        "campos": {
+            "documentos_habilitacao": "documentos exigidos para habilitação jurídica e econômico-financeira",
+            "regularidade_fiscal": "certidões e provas de regularidade fiscal e trabalhista",
+            "qualificacao_tecnica": "atestados, registros e comprovações de capacidade técnica",
+        },
     },
     "bloco4_requisitos_tecnicos": {
         "query": "especificações técnicas produto certificação norma ABNT amostra requisito técnico",
         "schema": {"especificacoes_resumo": None, "certificacoes_exigidas": [], "exige_amostra": None, "outros_requisitos": []},
+        "campos": {
+            "especificacoes_resumo": "resumo dos itens e de suas especificações técnicas",
+            "certificacoes_exigidas": "certificações, registros e normas exigidos dos produtos (INMETRO, ANVISA, ABNT)",
+            "exige_amostra": "se o edital exige apresentação de amostra",
+            "outros_requisitos": "outros requisitos técnicos, de garantia ou de entrega",
+        },
     },
     "bloco5_riscos": {
         "query": "multa penalidade sanção rescisão cláusula garantia risco atenção",
         "schema": {"multas": [], "sancoes": [], "clausulas_criticas": [], "pontos_atencao": []},
+        "campos": {
+            "multas": "percentuais e hipóteses de multa",
+            "sancoes": "outras sanções (advertência, impedimento de licitar, declaração de inidoneidade)",
+            "clausulas_criticas": "cláusulas que podem gerar rescisão ou prejuízo ao fornecedor",
+            "pontos_atencao": "exigências ou prazos que merecem atenção do fornecedor",
+        },
     },
 }
 
 
-MAX_CONTEXT_CHARS = 4500  # ~5500 tokens — dentro do limite do Groq free tier
+MAX_CONTEXT_CHARS = 7000  # folga para PALAVRAS_RESUMO palavras (~1.800 tokens por bloco)
 
 
-def _gerar_bloco(collection_name: str, query: str, schema: dict) -> dict:
-    chunks = buscar_chunks(collection_name, query, top_k=4)
+def _instrucoes_campos(schema: dict, campos: dict | None) -> str:
+    """Uma linha por campo, com o tipo esperado e o que ele deve conter."""
+    linhas = []
+    for nome, padrao in schema.items():
+        if isinstance(padrao, list):
+            tipo = "lista de frases curtas"
+        elif nome == "exige_amostra":
+            tipo = "true, false ou null"
+        else:
+            tipo = "texto curto, ou null se o trecho não informar"
+        descricao = (campos or {}).get(nome, nome.replace("_", " "))
+        linhas.append(f'- "{nome}" ({tipo}): {descricao}')
+    return "\n".join(linhas)
+
+
+def _gerar_bloco(collection_name: str, query: str, schema: dict, campos: dict | None = None) -> dict:
+    chunks = buscar_chunks(collection_name, query, max_palavras=PALAVRAS_RESUMO)
     context = "\n\n---\n\n".join(chunks)
     if len(context) > MAX_CONTEXT_CHARS:
         context = context[:MAX_CONTEXT_CHARS]
+    # Os campos são descritos um a um. Mostrar só o molde vazio ({"multas": [], ...}) fazia o
+    # modelo devolver o próprio molde, sem preencher nada, mesmo com a informação no trecho.
     prompt = (
         f"Trecho do edital:\n{context}\n\n"
-        f"Extraia as informações e retorne SOMENTE um JSON com esta estrutura "
-        f"(use null para campos não encontrados):\n"
-        f"{json.dumps(schema, ensure_ascii=False)}"
+        f"Extraia do trecho as informações abaixo e retorne SOMENTE um JSON com exatamente estes campos:\n"
+        f"{_instrucoes_campos(schema, campos)}\n\n"
+        f"Preencha cada campo com o que o trecho disser, citando números e prazos. "
+        f"Use null ou lista vazia apenas quando o trecho realmente não tratar do assunto."
     )
-    try:
-        resp = _groq.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": _SYSTEM_LICITACAO},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0,
-            response_format={"type": "json_object"},
-        )
-        return json.loads(resp.choices[0].message.content)
-    except Exception:
-        return schema
+    ultimo_erro: Exception | None = None
+    for tentativa in range(1, TENTATIVAS_BLOCO + 1):
+        try:
+            resp = _groq.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_LICITACAO},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+                reasoning_effort=LLM_REASONING_EFFORT,
+                response_format={"type": "json_object"},
+            )
+            return json.loads(resp.choices[0].message.content)
+        except Exception as exc:
+            ultimo_erro = exc
+            print(f"[Resumo] Tentativa {tentativa}/{TENTATIVAS_BLOCO} falhou: {exc.__class__.__name__}")
+            if tentativa < TENTATIVAS_BLOCO:
+                time.sleep(5 * tentativa)
+    # Não grava bloco vazio como se fosse resumo válido: quem chama decide o que fazer.
+    raise RuntimeError(f"a IA não respondeu após {TENTATIVAS_BLOCO} tentativas ({ultimo_erro.__class__.__name__})")
 
 
 def processar_pdf(pdf_bytes: bytes, collection_name: str) -> dict:
     """Processa PDF com collection_name explícito (usado pelo worker Celery)."""
-    texto = extrair_texto_pdf(pdf_bytes)
-    if not texto.strip():
-        raise ValueError("Não foi possível extrair texto do PDF.")
+    paginas = extrair_paginas(pdf_bytes)
+    if not any(p.strip() for p in paginas):
+        raise ErroDefinitivo(
+            "O PDF não contém texto selecionável (provavelmente é uma digitalização). "
+            "O sistema ainda não lê documentos escaneados."
+        )
 
-    chunks = chunkar_texto(texto)
-    _criar_colecao(collection_name)
-    _indexar_chunks(collection_name, chunks)
+    trechos = chunkar_paginas(paginas)
+    chunks = [t["text"] for t in trechos]
+    _recriar_colecao(collection_name)
+    _indexar_trechos(collection_name, trechos)
 
     resumo: dict = {}
     for chave, cfg in _BLOCOS.items():
-        resumo[chave] = _gerar_bloco(collection_name, cfg["query"], cfg["schema"])
+        try:
+            resumo[chave] = _gerar_bloco(collection_name, cfg["query"], cfg["schema"], cfg.get("campos"))
+        except RuntimeError as exc:
+            raise RuntimeError(f"Falha ao gerar o bloco '{chave}' do resumo: {exc}") from exc
         time.sleep(1.2)  # evita estourar o TPM do Groq free tier (413)
 
-    return {"chunks": chunks, "resumo": resumo, "total_chunks": len(chunks)}
+    return {"chunks": chunks, "trechos": trechos, "resumo": resumo, "total_chunks": len(chunks)}
 
 
 def processar_edital(pdf_bytes: bytes) -> dict:
     """Versão standalone com UUID gerado internamente (usado pelo upload manual)."""
     edital_id = str(uuid4())
-    collection_name = f"edital_{edital_id.replace('-', '_')}"
+    collection_name = nome_colecao(edital_id)
     resultado = processar_pdf(pdf_bytes, collection_name)
     return {"edital_id": edital_id, "collection_name": collection_name, **resultado}
 
 
 def responder_pergunta(collection_name: str, pergunta: str) -> dict:
-    chunks = buscar_chunks(collection_name, pergunta, top_k=5)
+    trechos = buscar_trechos(collection_name, pergunta, max_palavras=PALAVRAS_CHAT)
+    chunks = [t["text"] for t in trechos]
     context = "\n\n---\n\n".join(chunks)
-    resp = _groq.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[
-            {"role": "system", "content": "Você é um especialista em licitações públicas. Use APENAS o contexto do edital para responder. Seja objetivo e cite o trecho relevante quando possível."},
-            {"role": "user", "content": f"Contexto do edital:\n{context}\n\nPergunta: {pergunta}"},
-        ],
-        temperature=0,
-    )
+    # Sem limitar o raciocínio, o modelo às vezes gasta toda a saída "pensando" e devolve
+    # a resposta vazia (finish_reason=length). Resposta vazia não pode ser gravada como válida.
+    texto = ""
+    for _ in range(TENTATIVAS_BLOCO):
+        resp = _groq.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": "Você é um especialista em licitações públicas. Use APENAS o contexto do edital para responder. Seja objetivo e cite o trecho relevante quando possível."},
+                {"role": "user", "content": f"Contexto do edital:\n{context}\n\nPergunta: {pergunta}"},
+            ],
+            temperature=0,
+            reasoning_effort=LLM_REASONING_EFFORT,
+        )
+        texto = (resp.choices[0].message.content or "").strip()
+        if texto:
+            break
+        time.sleep(2)
+    if not texto:
+        raise RuntimeError("a IA devolveu resposta vazia")
+
     trecho = chunks[0][:300].strip() if chunks else None
-    return {"resposta": resp.choices[0].message.content, "chunks_utilizados": len(chunks), "trecho_fonte": trecho}
+    # Página do trecho mais relevante; None em coleções indexadas antes de a página ser guardada
+    pagina = trechos[0].get("pagina_inicial") if trechos else None
+    pagina_final = trechos[0].get("pagina_final") if trechos else None
+    return {
+        "resposta": texto,
+        "chunks_utilizados": len(chunks),
+        "trecho_fonte": trecho,
+        "pagina_fonte": pagina,
+        # Um trecho pode atravessar a quebra de página; a tela cita o intervalo
+        "pagina_fonte_final": pagina_final,
+    }
 
 
 def extrair_dados_item_edital(collection_name: str, produto_nome: str, produto_descricao: str) -> dict:
@@ -442,7 +680,7 @@ def extrair_dados_item_edital(collection_name: str, produto_nome: str, produto_d
     """
     query = f"quantidade valor unitário estimado lote item {produto_nome}"
     try:
-        chunks = buscar_chunks(collection_name, query, top_k=4)
+        chunks = buscar_chunks(collection_name, query, max_palavras=PALAVRAS_RESUMO)
     except Exception as e:
         print(f"[Extração Item] Erro ao buscar chunks: {e}")
         return {}
@@ -473,6 +711,7 @@ Retorne APENAS um JSON válido nesta estrutura exata (se algum campo não for en
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
+            reasoning_effort=LLM_REASONING_EFFORT,
             response_format={"type": "json_object"},
         )
         return json.loads(resp.choices[0].message.content)

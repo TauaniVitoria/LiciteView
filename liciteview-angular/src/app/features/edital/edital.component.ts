@@ -57,7 +57,7 @@ const STEPS = [
             <a *ngIf="urlPdf()" [href]="urlPdf()!" target="_blank" rel="noopener" download
                pButton type="button" label="Baixar PDF" icon="pi pi-download"
                class="p-button-outlined p-button-sm"></a>
-            <a *ngIf="!urlPdf() && l.url_origem" [href]="'https://pncp.gov.br' + (l.url_origem.startsWith('http') ? '' : '') + l.url_origem" target="_blank" rel="noopener"
+            <a *ngIf="!urlPdf() && l.url_origem" [href]="l.url_origem" target="_blank" rel="noopener"
                pButton type="button" label="Ver no PNCP" icon="pi pi-external-link"
                class="p-button-outlined p-button-sm"></a>
           </div>
@@ -115,15 +115,23 @@ const STEPS = [
           <!-- Erro -->
           <ng-container *ngIf="erro()">
             <div class="card" style="padding: 24px;">
-              <div style="display: flex; align-items: center; gap: 12px; color: var(--red);">
-                <i class="pi pi-exclamation-triangle" style="font-size: 24px;"></i>
-                <div>
-                  <div style="font-weight: 700; margin-bottom: 4px;">Falha no processamento</div>
-                  <div style="font-size: 13px; color: var(--ink-3);">{{ erro() }}</div>
+              <div style="display: flex; align-items: flex-start; gap: 12px; color: var(--red);">
+                <i class="pi pi-exclamation-triangle" style="font-size: 24px; margin-top: 2px;"></i>
+                <div style="flex: 1;">
+                  <div style="font-weight: 700; margin-bottom: 4px;">Falha no processamento do edital</div>
+                  <div style="font-size: 13px; color: var(--ink-3); white-space: pre-wrap;">{{ erro() }}</div>
                 </div>
               </div>
-              <button pButton type="button" label="Tentar novamente" icon="pi pi-refresh"
-                      class="p-button-outlined" style="margin-top: 16px;" (click)="iniciarProcessamento(l)"></button>
+
+              <div style="display: flex; gap: 12px; margin-top: 20px; align-items: center; flex-wrap: wrap;">
+                <button pButton type="button" label="Tentar novamente" icon="pi pi-refresh"
+                        class="p-button-outlined p-button-sm" (click)="iniciarProcessamento(l, true)"></button>
+
+                <label pButton class="p-button-primary p-button-sm" style="cursor: pointer; display: inline-flex; align-items: center;">
+                  <i class="pi pi-upload" style="margin-right: 6px;"></i> Enviar PDF do Edital
+                  <input type="file" accept="application/pdf" (change)="onPdfUpload($event)" style="display: none;" />
+                </label>
+              </div>
             </div>
           </ng-container>
 
@@ -200,9 +208,12 @@ export class EditalComponent implements OnInit, OnDestroy {
     if (this._stepTimer) clearInterval(this._stepTimer);
   }
 
-  iniciarProcessamento(l: Licitacao): void {
+  // reprocessar = true só quando o usuário clica em "Tentar novamente": abrir a página de um
+  // edital que falhou mostra o erro, sem disparar o processamento de novo.
+  iniciarProcessamento(l: Licitacao, reprocessar = false): void {
     this._pollSub?.unsubscribe();
     this.erro.set('');
+    if (reprocessar) this.carregando.set(true);
 
     this.editalSvc.processar({
       id_pncp:        l.id,
@@ -212,6 +223,9 @@ export class EditalComponent implements OnInit, OnDestroy {
       modalidade:     l.modalidade,
       valor_estimado: l.valor ?? undefined,
       url_origem:     l.url_origem ?? undefined,
+      uf:             l.uf || undefined,         // destino do frete na viabilidade
+      municipio:      l.municipio || undefined,
+      reprocessar:    reprocessar || undefined,
       data_abertura:  l.abertura ? l.abertura.split('T')[0] : undefined,
     }).subscribe({
       next: (res) => {
@@ -219,6 +233,11 @@ export class EditalComponent implements OnInit, OnDestroy {
         if (res.status === 'PROCESSADO') {
           this.editalId.set(res.edital_id);
           this._buscarResumo(res.edital_id);
+        } else if (res.status === 'ERRO') {
+          // Guarda o id para o upload manual ir para este mesmo edital
+          this.editalId.set(res.edital_id);
+          this.editalSvc.getStatus(res.edital_id).subscribe((s) =>
+            this.erro.set(s.erro_mensagem ?? 'O processamento deste edital falhou.'));
         } else {
           this._iniciarPolling(res.edital_id);
         }
@@ -265,6 +284,7 @@ export class EditalComponent implements OnInit, OnDestroy {
           if (this._stepTimer) clearInterval(this._stepTimer);
         }
         if (s.status === 'ERRO') {
+          this.editalId.set(s.edital_id);
           this.erro.set(s.erro_mensagem ?? 'Erro desconhecido no processamento.');
           this.processando.set(false);
           if (this._stepTimer) clearInterval(this._stepTimer);
@@ -283,6 +303,26 @@ export class EditalComponent implements OnInit, OnDestroy {
     this._stepTimer = setInterval(() => {
       this.stepAtual.update((v) => Math.min(v + 1, STEPS.length - 1));
     }, 8000);
+  }
+
+  onPdfUpload(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    this.carregando.set(true);
+    this.erro.set('');
+
+    this.editalSvc.uploadPdf(file, this.editalId() ?? undefined).subscribe({
+      next: (res) => {
+        this.carregando.set(false);
+        this.editalId.set(res.edital_id);
+        this._iniciarPolling(res.edital_id);
+      },
+      error: (e) => {
+        this.carregando.set(false);
+        this.erro.set(e.error?.detail ?? 'Falha ao enviar arquivo PDF.');
+      },
+    });
   }
 
   back(): void {

@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding('sentence-transformers/all-MiniLM-L6-v2')"
 
 COPY . .
-RUN rm -rf venv/ __pycache__/ .git/ static/
+RUN rm -rf venv/ .venv/ __pycache__/ .git/ static/ *.db
 
 EXPOSE 8000
 

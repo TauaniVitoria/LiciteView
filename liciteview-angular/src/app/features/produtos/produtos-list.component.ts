@@ -41,7 +41,7 @@ import { ProdutoService } from '../../core/services/produto.service';
             <td>{{ p.cep }} · {{ p.uf }}</td>
             <td>
               <div style="display: flex; gap: 4px; justify-content: flex-end;">
-                <button pButton type="button" icon="pi pi-pencil" class="p-button-text p-button-sm"></button>
+                <button pButton type="button" icon="pi pi-pencil" class="p-button-text p-button-sm" title="Editar" (click)="editar(p.id)"></button>
                 <button pButton type="button" icon="pi pi-trash" class="p-button-text p-button-sm p-button-danger" (click)="remove(p.id)"></button>
               </div>
             </td>
@@ -65,6 +65,10 @@ export class ProdutosListComponent {
 
   novo(): void {
     this.router.navigateByUrl('/produtos/novo');
+  }
+
+  editar(id: string): void {
+    this.router.navigate(['/produtos', id, 'editar']);
   }
 
   remove(id: string): void {

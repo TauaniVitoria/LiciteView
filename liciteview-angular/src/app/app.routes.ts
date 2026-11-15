@@ -46,6 +46,11 @@ export const routes: Routes = [
         path: 'produtos/novo',
         loadComponent: () => import('./features/produtos/produto-form.component').then(m => m.ProdutoFormComponent),
       },
+      {
+        // Mesmo formulário; o parâmetro :id chega ao componente como @Input (withComponentInputBinding)
+        path: 'produtos/:id/editar',
+        loadComponent: () => import('./features/produtos/produto-form.component').then(m => m.ProdutoFormComponent),
+      },
     ],
   },
   { path: '**', redirectTo: '/pesquisa' },

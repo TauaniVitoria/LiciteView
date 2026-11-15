@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, Input, inject, signal, computed, OnDestroy, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, Input, inject, signal, computed, OnChanges, OnDestroy, OnInit, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DropdownModule } from 'primeng/dropdown';
@@ -56,7 +56,7 @@ import { AnaliseService, PIPELINE_STEPS } from '../../core/services/analise.serv
             </div>
             <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 6px; color: var(--ink);">Esta licitação ainda não foi analisada</h2>
             <p style="font-size: 13.5px; color: var(--ink-3); margin: 0 0 24px; line-height: 1.55;">
-              A análise cruza dados do edital com seu produto, calcula custo logístico via Tabela ANTT e gera o score de atratividade.
+              A análise procura o seu produto no edital, calcula o custo de produção e impostos, estima o frete pela Tabela ANTT e compara a margem com a mínima definida no produto.
             </p>
 
             <div *ngIf="erro()" style="margin-bottom: 16px; padding: 12px 16px; background: var(--red-50); border: 1px solid var(--red); border-radius: var(--r-md); font-size: 13px; color: var(--red); text-align: left; display: flex; align-items: flex-start; gap: 10px;">
@@ -71,18 +71,19 @@ import { AnaliseService, PIPELINE_STEPS } from '../../core/services/analise.serv
               </div>
 
               <div>
-                <label class="field__label" style="margin-bottom: 8px; display: block;">Valor Estimado do Lote / Item (R$)</label>
-                <input pInputText type="number" [(ngModel)]="valorReferencia" placeholder="Ex: 20096.27" style="width: 100%;" />
+                <label class="field__label" style="margin-bottom: 8px; display: block;">Quantidade (opcional)</label>
+                <input pInputText type="number" min="1" [(ngModel)]="quantidade" placeholder="Deixe em branco para usar a quantidade do edital" style="width: 100%;" />
                 <div style="font-size: 11px; color: var(--ink-3); margin-top: 4px;">
-                  Opcional se o edital já possui valor global. Obrigatório caso contrário.
+                  A análise usa o preço e o custo do cadastro do produto e procura no edital a quantidade e o valor estimado do item.
+                  Preencha apenas se quiser simular outra quantidade ou se o sistema não encontrar o produto no edital.
                 </div>
               </div>
 
               <div style="font-size: 11.5px; color: var(--ink-3); border-top: 1px solid var(--border); padding-top: 8px;">
-                Tempo estimado: ~15s · Resultado fica em cache no PostgreSQL
+                Tempo estimado: ~15s
               </div>
             </div>
-            <button pButton type="button" label="Analisar viabilidade" icon="pi pi-sparkles" (click)="start()" [disabled]="!selectedProd || !editalId || (!licitacao.valor && !valorReferencia)"></button>
+            <button pButton type="button" label="Analisar viabilidade" icon="pi pi-sparkles" (click)="start()" [disabled]="!selectedProd || !editalId"></button>
           </div>
         </div>
       </ng-container>
@@ -110,31 +111,23 @@ import { AnaliseService, PIPELINE_STEPS } from '../../core/services/analise.serv
                   <div class="semaphore__light green" [class.is-on]="a.verdict === 'green'"></div>
                 </div>
                 <div class="semaphore__verdict" [ngClass]="a.verdict">{{ verdictLabel(a.verdict) }}</div>
-                <div class="semaphore__score">Score de atratividade: <strong>{{ a.score }}</strong>/100</div>
-
-                <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); text-align: left;">
-                  <div style="font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Critérios avaliados</div>
-                  <div style="margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span style="color: var(--ink-2);">Margem estimada</span><span class="mono" style="color: var(--ink-3); font-weight: 600;">{{ critMargem() }}%</span></div>
-                    <div class="bar"><div class="bar__fill" [ngClass]="critMargemColor()" [style.width]="critMargem() + '%'"></div></div>
-                  </div>
-                  <div style="margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span style="color: var(--ink-2);">Capacidade vs demanda</span><span class="mono" style="color: var(--ink-3); font-weight: 600;">{{ a.verdict === 'red' ? 30 : 85 }}%</span></div>
-                    <div class="bar"><div class="bar__fill" [ngClass]="a.verdict === 'red' ? 'red' : 'green'" [style.width]="(a.verdict === 'red' ? 30 : 85) + '%'"></div></div>
-                  </div>
-                  <div style="margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span style="color: var(--ink-2);">Compatibilidade técnica</span><span class="mono" style="color: var(--ink-3); font-weight: 600;">92%</span></div>
-                    <div class="bar"><div class="bar__fill green" style="width: 92%;"></div></div>
-                  </div>
-                  <div style="margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;"><span style="color: var(--ink-2);">Distância logística</span><span class="mono" style="color: var(--ink-3); font-weight: 600;">{{ a.verdict === 'red' ? 35 : 65 }}%</span></div>
-                    <div class="bar"><div class="bar__fill" [ngClass]="a.verdict === 'red' ? 'amber' : 'green'" [style.width]="(a.verdict === 'red' ? 35 : 65) + '%'"></div></div>
-                  </div>
-                </div>
+                <div class="semaphore__score" *ngIf="!a.avisos.length">Score de atratividade: <strong>{{ a.score }}</strong>/100</div>
+                <div class="semaphore__score" *ngIf="a.avisos.length">Resultado baseado em estimativas</div>
               </div>
 
               <!-- Metrics -->
               <div>
+                <div *ngFor="let aviso of a.avisos"
+                     style="margin-bottom: 12px; padding: 12px 16px; background: var(--amber-50, #fff7e6); border: 1px solid var(--amber, #d97706); border-radius: var(--r-md); font-size: 13px; color: var(--ink-2); display: flex; align-items: flex-start; gap: 10px;">
+                  <i class="pi pi-exclamation-triangle" style="flex-shrink: 0; margin-top: 2px; color: var(--amber, #d97706);"></i>
+                  <span>{{ aviso }}</span>
+                </div>
+                <div *ngIf="a.precoProposta" style="margin-bottom: 12px; padding: 12px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); font-size: 13px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 6px 24px;">
+                  <span>Seu preço: <strong class="mono">{{ a.precoProduto | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</strong></span>
+                  <span *ngIf="a.valorUnitarioEdital; else semTeto">Valor estimado no edital: <strong class="mono">{{ a.valorUnitarioEdital | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</strong></span>
+                  <ng-template #semTeto><span>Valor estimado no edital: <strong>não encontrado</strong></span></ng-template>
+                  <span>Preço considerado: <strong class="mono">{{ a.precoProposta | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</strong></span>
+                </div>
                 <div class="metric-grid">
                   <div class="metric">
                     <div class="metric__label">Margem estimada</div>
@@ -148,23 +141,19 @@ import { AnaliseService, PIPELINE_STEPS } from '../../core/services/analise.serv
                   <div class="metric">
                     <div class="metric__label">Custo operacional</div>
                     <div class="metric__value">{{ a.custoOperacional | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</div>
-                    <div class="metric__delta">Produção + impostos {{ p.impostos }}%</div>
+                    <div class="metric__delta">{{ a.quantidade | number:'1.0-0':'pt-BR' }} un. · produção + impostos {{ p.impostos }}%</div>
                   </div>
                   <div class="metric">
                     <div class="metric__label">Custo logístico</div>
                     <div class="metric__value">{{ a.custoLogistico | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</div>
-                    <div class="metric__delta">{{ p.cep }} → {{ licitacao.uf }} · Tabela ANTT</div>
+                    <div class="metric__delta">{{ a.ufOrigem }} → {{ a.ufDestino }} · {{ a.distanciaKm | number:'1.0-0':'pt-BR' }} km · Tabela ANTT</div>
                   </div>
                 </div>
 
                 <div class="card">
-                  <div class="card__header"><i class="pi pi-chart-bar"></i><h3 class="card__title">Análise contextual</h3></div>
+                  <div class="card__header"><i class="pi pi-chart-bar"></i><h3 class="card__title">Como o resultado foi calculado</h3></div>
                   <div class="card__body">
-                    <p style="font-size: 13.5px; color: var(--ink-2); margin: 0; line-height: 1.6;" [ngSwitch]="a.verdict">
-                      <ng-container *ngSwitchCase="'green'">Margem positiva e dentro da capacidade produtiva. Distância logística favorável e exigências técnicas compatíveis. Recomenda-se prosseguir com a proposta.</ng-container>
-                      <ng-container *ngSwitchCase="'amber'">Margem apertada e exigências adicionais de habilitação. Avalie risco vs benefício antes de submeter proposta.</ng-container>
-                      <ng-container *ngSwitchCase="'red'">Prejuízo estimado considerando custo operacional + frete. Não recomendamos participar desta licitação no formato atual.</ng-container>
-                    </p>
+                    <p style="font-size: 13.5px; color: var(--ink-2); margin: 0; line-height: 1.6;">{{ a.justificativa }}</p>
                   </div>
                 </div>
               </div>
@@ -175,7 +164,7 @@ import { AnaliseService, PIPELINE_STEPS } from '../../core/services/analise.serv
     </ng-template>
   `,
 })
-export class ViabilidadeTabComponent implements OnDestroy, OnInit {
+export class ViabilidadeTabComponent implements OnChanges, OnDestroy, OnInit {
   private readonly produtoSvc = inject(ProdutoService);
   private readonly analiseSvc = inject(AnaliseService);
 
@@ -192,13 +181,19 @@ export class ViabilidadeTabComponent implements OnDestroy, OnInit {
   readonly erro    = signal('');
 
   selectedProd: string = this.produtos()[0]?.id ?? '';
-  valorReferencia: number | null = null;
+  quantidade: number | null = null;
 
   private _stepTimer?: ReturnType<typeof setInterval>;
 
-  ngOnInit(): void {
-    if (this.licitacao && this.licitacao.valor) {
-      this.valorReferencia = this.licitacao.valor;
+  ngOnInit(): void {}
+
+  // O id do edital chega depois que a página abre (vem da resposta do processamento).
+  // Quando chega, busca a análise já salva para o resultado não sumir ao recarregar.
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['editalId'] && this.editalId && !this.analysis()) {
+      this.analiseSvc.carregar(this.editalId, this.licitacao.id).subscribe((a) => {
+        if (a) this.selectedProd = a.produtoId;
+      });
     }
   }
 
@@ -229,7 +224,7 @@ export class ViabilidadeTabComponent implements OnDestroy, OnInit {
       this.editalId,
       this.selectedProd,
       this.licitacao.id,
-      this.valorReferencia ? Number(this.valorReferencia) : undefined
+      this.quantidade ? Number(this.quantidade) : undefined
     ).subscribe({
       next: () => {
         clearInterval(this._stepTimer);
@@ -252,17 +247,5 @@ export class ViabilidadeTabComponent implements OnDestroy, OnInit {
 
   verdictLabel(v: 'green' | 'amber' | 'red'): string {
     return v === 'green' ? 'Vale a pena' : v === 'amber' ? 'Atenção' : 'Não recomendado';
-  }
-
-  critMargem(): number {
-    const a = this.analysis();
-    if (!a) return 0;
-    return a.margemPct > 0 ? 70 + a.margemPct : 30;
-  }
-
-  critMargemColor(): string {
-    const a = this.analysis();
-    if (!a) return 'amber';
-    return a.margemPct > 15 ? 'green' : a.margemPct > 0 ? 'amber' : 'red';
   }
 }

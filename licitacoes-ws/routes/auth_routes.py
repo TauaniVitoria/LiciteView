@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from database import get_db
 from dependencies import verificar_token
 from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, hash_password, verify_password
 from models import Usuario, PerfilUsuario
+from rate_limit import LIMITE_CADASTRO, LIMITE_LOGIN, limiter
 from schemas import LoginRequest, TokenResponse, UsuarioCreate, UsuarioResponse
 
 auth_router = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -20,7 +21,8 @@ def _criar_token(usuario_id: str) -> str:
 
 
 @auth_router.post("/register", response_model=UsuarioResponse, status_code=201)
-def registrar(dados: UsuarioCreate, session: Session = Depends(get_db)):
+@limiter.limit(LIMITE_CADASTRO)
+def registrar(request: Request, dados: UsuarioCreate, session: Session = Depends(get_db)):
     if session.query(Usuario).filter(Usuario.email == dados.email).first():
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
     if session.query(Usuario).filter(Usuario.cnpj == dados.cnpj).first():
@@ -44,7 +46,8 @@ def registrar(dados: UsuarioCreate, session: Session = Depends(get_db)):
 
 
 @auth_router.post("/login", response_model=TokenResponse)
-def login(dados: LoginRequest, session: Session = Depends(get_db)):
+@limiter.limit(LIMITE_LOGIN)
+def login(request: Request, dados: LoginRequest, session: Session = Depends(get_db)):
     usuario = session.query(Usuario).filter(Usuario.email == dados.email).first()
     if not usuario or not verify_password(dados.senha, usuario.senha_hash):
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
@@ -54,7 +57,8 @@ def login(dados: LoginRequest, session: Session = Depends(get_db)):
 
 
 @auth_router.post("/login-form", response_model=TokenResponse)
-def login_form(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_db)):
+@limiter.limit(LIMITE_LOGIN)
+def login_form(request: Request, form: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_db)):
     usuario = session.query(Usuario).filter(Usuario.email == form.username).first()
     if not usuario or not verify_password(form.password, usuario.senha_hash):
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")

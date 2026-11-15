@@ -47,6 +47,10 @@ Thumbs.db
 *.log
 logs/
 
+# Banco SQLite local (contém hashes de senha e PDFs de editais)
+*.db
+*.db-journal
+
 # Uploads / arquivos temporários
 uploads/
 tmp/

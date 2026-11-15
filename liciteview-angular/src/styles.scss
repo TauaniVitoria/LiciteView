@@ -54,6 +54,12 @@
   /* Type */
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  --font-family: var(--font-ui);
+}
+
+@font-face {
+  font-family: "Inter var";
+  src: local("IBM Plex Sans"), local("Arial"), sans-serif;
 }
 
 [data-density="compact"] {
